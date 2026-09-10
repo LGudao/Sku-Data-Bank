@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SKU Data Bank</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<style>
+  :root {
+    --bg: #f0eee5;
+    --surface: #ffffff;
+    --surface-alt: #e8e4d6;
+    --border: #d7d1bd;
+    --ink: #21231d;
+    --ink-muted: #666a5a;
+    --ink-faint: #8b8f7c;
+    --accent: #1e6f5a;
+    --accent-ink: #ffffff;
+    --accent-soft: #dbeee7;
+    --warn: #b5651d;
+    --warn-soft: #f3e3d2;
+    --danger: #a93b2e;
+    --danger-soft: #f5ded9;
+    --focus: #1e6f5a;
+    --shadow: 0 1px 2px rgba(33,35,29,0.06), 0 4px 16px rgba(33,35,29,0.06);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #191a14;
+      --surface: #21221b;
+      --surface-alt: #2a2b22;
+      --border: #3a3b2f;
+      --ink: #ece9dd;
+      --ink-muted: #a8a894;
+      --ink-faint: #7c7d69;
+      --accent: #4fb896;
+      --accent-ink: #0c1512;
+      --accent-soft: #24352e;
+      --warn: #e0a262;
+      --warn-soft: #3a2e1e;
+      --danger: #e2857a;
+      --danger-soft: #3a231f;
+      --focus: #4fb896;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #191a14;
+    --surface: #21221b;
+    --surface-alt: #2a2b22;
+    --border: #3a3b2f;
+    --ink: #ece9dd;
+    --ink-muted: #a8a894;
+    --ink-faint: #7c7d69;
+    --accent: #4fb896;
+    --accent-ink: #0c1512;
+    --accent-soft: #24352e;
+    --warn: #e0a262;
+    --warn-soft: #3a2e1e;
+    --danger: #e2857a;
+    --danger-soft: #3a231f;
+    --focus: #4fb896;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    padding: 0 20px 60px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  header.top {
+    padding: 28px 0 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .top-meta { font-size: 13px; color: var(--ink-muted); text-align: right; line-height: 1.5; }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 6px; box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 520px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
+    transition: border-color .15s ease, transform .1s ease;
+  }
+  .stat:hover { border-color: var(--accent); }
+  .stat.active-filter { border-color: var(--accent); background: var(--accent-soft); }
+  .stat .n { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; display: block; }
+  .stat .l { font-size: 11.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .stat.warn .n { color: var(--warn); }
+  .stat.danger .n { color: var(--danger); }
+
+  .banner {
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    color: var(--ink);
+    margin-bottom: 18px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+  .banner button { background: none; border: none; color: var(--ink-muted); cursor: pointer; font-size: 13px; text-decoration: underline; font-family: inherit; padding: 0; }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 14px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding: 10px 0;
+    z-index: 5;
+  }
+  input, select, button {
+    font-family: inherit;
+    font-size: 13.5px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    padding: 8px 11px;
+  }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  #search { flex: 1 1 240px; min-width: 160px; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-ghost { cursor: pointer; }
+  .btn-ghost:hover { border-color: var(--accent); }
+
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 1080px; }
+  thead th {
+    position: sticky; top: 0;
+    background: var(--surface-alt);
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--ink-muted);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+  }
+  thead th:hover { color: var(--ink); }
+  thead th .arrow { opacity: .5; margin-left: 3px; }
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+    vertical-align: top;
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--surface-alt); }
+  tbody tr:last-child td { border-bottom: none; }
+  .sku-cell .code { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; }
+  .desc-cell .d { max-width: 320px; }
+  .muted { color: var(--ink-muted); font-size: 12px; }
+  .right { text-align: right; }
+  .empty-val { color: var(--ink-faint); }
+
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+  .badge.active { background: var(--accent-soft); color: var(--accent); }
+  .badge.inactive { background: var(--surface-alt); color: var(--ink-muted); }
+  .flag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 6px; border-radius: 5px; margin: 0 4px 4px 0; }
+  .flag.cost { background: var(--warn-soft); color: var(--warn); }
+  .flag.price { background: var(--warn-soft); color: var(--warn); }
+  .flag.dup { background: var(--danger-soft); color: var(--danger); }
+
+  .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13px; color: var(--ink-muted); }
+  .pager .btns { display: flex; gap: 8px; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,20,15,0.45);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; overflow-y: auto; z-index: 50;
+  }
+  .modal {
+    background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+    width: 100%; max-width: 640px; padding: 22px 24px 24px; box-shadow: var(--shadow);
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 18px; }
+  .modal .sub { color: var(--ink-muted); font-size: 13px; margin: 0 0 18px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-grid .span2 { grid-column: 1 / -1; }
+  @media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } }
+  .field label { display: block; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-muted); margin-bottom: 4px; }
+  .field input, .field select { width: 100%; }
+  .modal-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; gap: 10px; }
+  .modal-actions .right-group { display: flex; gap: 8px; }
+  .danger-link { background: none; border: none; color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 13px; font-family: inherit; padding: 0; }
+  .hint { font-size: 12px; color: var(--ink-faint); margin-top: 3px; }
+
+  footer.note { margin-top: 22px; font-size: 12px; color: var(--ink-faint); text-align: center; }
+
+  .gate-modal { max-width: 400px; }
+  .gate-modal .field { margin-bottom: 14px; }
+  .gate-modal .field:last-of-type { margin-bottom: 4px; }
+  .gate-error { color: var(--danger); font-size: 13px; margin: 2px 0 0; min-height: 1.2em; }
+  .signed-in { font-size: 12px; color: var(--ink-muted); margin-top: 3px; }
+  .signed-in button { background: none; border: none; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 12px; font-family: inherit; padding: 0; }
+  .view-only-note { display: inline-block; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--warn); background: var(--warn-soft); border-radius: 999px; padding: 2px 8px; margin-left: 8px; }
+
+  .report-modal { max-width: 1100px; }
+  .report-controls { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .report-controls .field { min-width: 260px; }
+  .history-grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 50vh; overflow-y: auto; }
+  .history-grid { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .history-grid th, .history-grid td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; white-space: nowrap; }
+  .history-grid thead th { position: sticky; top: 0; background: var(--surface); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-muted); text-align: right; z-index: 1; }
+  .history-grid thead th:first-child { text-align: left; left: 0; z-index: 2; }
+  .history-grid td:first-child { position: sticky; left: 0; background: var(--surface); font-weight: 600; }
+  .history-grid td.right, .history-grid th.right { text-align: right; }
+  .hist-cell { cursor: pointer; }
+  .hist-cell:hover, .hist-cell:focus { background: var(--accent-soft); outline: none; }
+  .hist-cost-tag { font-size: 9.5px; text-transform: uppercase; color: var(--ink-faint); margin-left: 4px; }
+  .hist-detail { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--accent-soft); }
+  .hist-detail h3 { margin: 0 0 10px; font-size: 14px; }
+  .hist-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .hist-detail-label { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-muted); margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="appWrap" hidden>
+  <header class="top">
+    <div>
+      <p class="eyebrow">Approved Cost &amp; Selling Price Registry</p>
+      <h1>SKU Data Bank</h1>
+    </div>
+    <div class="top-meta">
+      <div id="topMeta"><span class="live-dot"></span>Connecting…</div>
+      <div class="signed-in" id="signedInInfo"></div>
+    </div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="banner" id="qualityBanner" hidden>
+    <span id="bannerText"></span>
+    <button id="bannerDismiss">Dismiss</button>
+  </div>
+
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search SKU, description, client, company…" aria-label="Search" />
+    <select id="statusFilter" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="ACTIVE">Active</option>
+      <option value="INACTIVE">Inactive</option>
+    </select>
+    <select id="categoryFilter" aria-label="Filter by category">
+      <option value="">All categories</option>
+    </select>
+    <button class="btn-ghost" id="reportBtn" type="button">Price history report</button>
+    <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in log</button>
+    <button class="btn-primary" id="addBtn" type="button">+ Add SKU</button>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="sku">SKU <span class="arrow"></span></th>
+          <th data-sort="description">Description <span class="arrow"></span></th>
+          <th data-sort="category">Category <span class="arrow"></span></th>
+          <th data-sort="status">Status <span class="arrow"></span></th>
+          <th data-sort="approvedCostVatIn" class="right">Approved Cost <span class="arrow"></span></th>
+          <th data-sort="approvedSellingPrice" class="right">Approved Selling <span class="arrow"></span></th>
+          <th data-sort="margin" class="right">Margin <span class="arrow"></span></th>
+          <th data-sort="updatedAt">Updated <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <span id="pageInfo"></span>
+    <div class="btns">
+      <button class="btn-ghost" id="prevPage" type="button">Prev</button>
+      <button class="btn-ghost" id="nextPage" type="button">Next</button>
+    </div>
+  </div>
+
+  <footer class="note">Cost is VAT-in, selling price is VAT-ex, matching how the source price list recorded them. Margin compares selling price against the VAT-ex cost.</footer>
+</div>
+
+<div class="modal-backdrop" id="gateBackdrop">
+  <div class="modal gate-modal">
+    <h2>SKU Data Bank</h2>
+    <p class="sub">Enter the shared passcode and your name to continue. Your name is attached to any edits you make.</p>
+    <form id="gateForm">
+      <div class="field">
+        <label for="g_passcode">Passcode</label>
+        <input id="g_passcode" type="password" autocomplete="off" required />
+      </div>
+      <div class="field">
+        <label for="g_name">Your name</label>
+        <input id="g_name" type="text" autocomplete="off" required placeholder="e.g. Lyza Gudao" />
+      </div>
+      <p class="gate-error" id="gateError"></p>
+      <div class="modal-actions" style="justify-content:flex-end;">
+        <button type="submit" class="btn-primary">Enter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="logBackdrop" hidden>
+  <div class="modal">
+    <h2>Sign-in log</h2>
+    <p class="sub">Everyone who has entered a passcode, most recent first.</p>
+    <div id="logBody"></div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button type="button" class="btn-ghost" id="logCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="reportBackdrop" hidden>
+  <div class="modal report-modal">
+    <h2>Price history report</h2>
+    <p class="sub">Select a client to see each of their SKUs' approved cost and selling price by month for 2026, with the date it was approved and the date it took effect.</p>
+    <div class="report-controls">
+      <div class="field">
+        <label for="reportClientSelect">Client</label>
+        <select id="reportClientSelect"><option value="">Choose a client…</option></select>
+      </div>
+    </div>
+    <div id="reportBody"><p class="muted">Choose a client above to see their 12-month price history.</p></div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button type="button" class="btn-ghost" id="reportCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal">
+    <h2 id="modalTitle">Edit SKU</h2>
+    <p class="sub" id="modalSub"></p>
+    <form id="skuForm">
+      <div class="form-grid">
+        <div class="field span2">
+          <label for="f_sku">SKU / Inventory ID</label>
+          <input id="f_sku" required />
+        </div>
+        <div class="field span2">
+          <label for="f_description">Description</label>
+          <input id="f_description" required />
+        </div>
+        <div class="field">
+          <label for="f_category">Category</label>
+          <input id="f_category" />
+        </div>
+        <div class="field">
+          <label for="f_status">Status</label>
+          <select id="f_status">
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f_company">Company</label>
+          <input id="f_company" />
+        </div>
+        <div class="field">
+          <label for="f_client">Client</label>
+          <input id="f_client" />
+        </div>
+        <div class="field">
+          <label for="f_currency">Currency</label>
+          <input id="f_currency" value="PHP" />
+        </div>
+        <div class="field">
+          <label for="f_costVatIn">Approved Cost (VAT-in)</label>
+          <input id="f_costVatIn" type="number" step="0.0001" />
+        </div>
+        <div class="field">
+          <label for="f_costVatEx">Approved Cost (VAT-ex)</label>
+          <input id="f_costVatEx" type="number" step="0.0001" />
+        </div>
+        <div class="field">
+          <label for="f_sellingPrice">Approved Selling Price (VAT-ex)</label>
+          <input id="f_sellingPrice" type="number" step="0.0001" />
+          <p class="hint" id="asOfHint"></p>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="danger-link" id="deleteBtn">Delete SKU</button>
+        <div class="right-group">
+          <button type="button" class="btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn-primary" id="saveBtn">Save</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  // --- Firebase setup ---
+  // This app is hosted as a static page (e.g. GitHub Pages) and talks directly
+  // to a Firebase Firestore database. There are no real user accounts — the
+  // passcode below is a client-side gate — but once someone passes it, the app
+  // signs them in anonymously via Firebase Auth so that Firestore's Security
+  // Rules (which require request.auth != null) will accept their reads/writes.
+  // This keeps the database closed to anyone who hasn't gone through the app.
+  // See firestore.rules for this project's actual rules.
+  var firebaseConfig = {
+    apiKey: "AIzaSyBMVHM6oFHB9E7jsBjlLUFRkh7uFxt9X78",
+    authDomain: "sku-data-bank.firebaseapp.com",
+    projectId: "sku-data-bank",
+    storageBucket: "sku-data-bank.firebasestorage.app",
+    messagingSenderId: "1008546998296",
+    appId: "1:1008546998296:web:acd33ebfe92172aafa7b6d",
+    measurementId: "G-T5275BX7MF"
+  };
+  firebase.initializeApp(firebaseConfig);
+
+  var db = null;
+  var col = null;
+  var activeDocs = new Map();
+  var inactiveDocs = new Map();
+  var records = [];
+  var sortKey = 'sku';
+  var sortDir = 'asc';
+  var page = 1;
+  var pageSize = 100;
+  var filters = { search: '', status: '', category: '', only: null };
+  var editingDocId = null;
+  var bannerDismissed = false;
+
+  var ADMIN_PASSCODE = 'FGS-SKU-2026';
+  var USER_PASSCODE = 'FGS-SKU-TEAM26';
+  var LS_NAME = 'skuDataBank_displayName';
+  var LS_GATE = 'skuDataBank_gateOk';
+  var LS_ROLE = 'skuDataBank_role';
+  var canEdit = null; // null = unknown yet, true/false = known once Firebase connects
+  var pendingLogWrite = false;
+  var unsubActive = null;
+  var unsubInactive = null;
+
+  function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+  function lsClear(key) { try { localStorage.removeItem(key); } catch (e) {} }
+  var displayName = lsGet(LS_NAME) || '';
+  var role = lsGet(LS_ROLE) || null;
+
+  function fmtMoney(v) {
+    if (v === null || v === undefined) return '<span class="empty-val">—</span>';
+    return v.toFixed(4);
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try {
+      var d = new Date(iso);
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch (e) { return '—'; }
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var HISTORY_MONTHS = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
+  var HISTORY_MONTH_LABELS = {
+    '2026-01': 'Jan 2026', '2026-02': 'Feb 2026', '2026-03': 'Mar 2026', '2026-04': 'Apr 2026',
+    '2026-05': 'May 2026', '2026-06': 'Jun 2026', '2026-07': 'Jul 2026', '2026-08': 'Aug 2026',
+    '2026-09': 'Sep 2026', '2026-10': 'Oct 2026', '2026-11': 'Nov 2026', '2026-12': 'Dec 2026'
+  };
+
+  function populateReportClientSelect() {
+    var sel = document.getElementById('reportClientSelect');
+    if (!sel) return;
+    var current = sel.value;
+    var clients = Array.from(new Set(records.map(function (r) { return (r.client || '').trim(); }).filter(Boolean)))
+      .sort(function (a, b) { return a.localeCompare(b); });
+    sel.innerHTML = '<option value="">Choose a client…</option>' + clients.map(function (c) {
+      return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>';
+    }).join('');
+    if (current && clients.indexOf(current) !== -1) sel.value = current;
+  }
+
+  function openReportModal() {
+    populateReportClientSelect();
+    document.getElementById('reportBackdrop').hidden = false;
+  }
+  function closeReportModal() {
+    document.getElementById('reportBackdrop').hidden = true;
+  }
+
+  function renderClientReport(client) {
+    var body = document.getElementById('reportBody');
+    if (!client) {
+      body.innerHTML = '<p class="muted">Choose a client above to see their 12-month price history.</p>';
+      return;
+    }
+    var skus = records.filter(function (r) {
+      return (r.client || '').trim() === client && r.priceHistory && Object.keys(r.priceHistory).length;
+    });
+    if (!skus.length) {
+      body.innerHTML = '<p class="muted">No monthly price history has been imported yet for <strong>' + escapeHtml(client) + '</strong>.</p>';
+      return;
+    }
+    skus.sort(function (a, b) { return (a.sku || '').localeCompare(b.sku || ''); });
+
+    var head = '<th>SKU</th>' + HISTORY_MONTHS.map(function (mk) {
+      return '<th class="right">' + HISTORY_MONTH_LABELS[mk] + '</th>';
+    }).join('');
+
+    var rows = skus.map(function (r) {
+      var cells = HISTORY_MONTHS.map(function (mk) {
+        var h = r.priceHistory[mk];
+        if (!h) return '<td class="right muted">—</td>';
+        var display = h.sellingPriceVatEx != null
+          ? fmtMoney(h.sellingPriceVatEx)
+          : (h.costVatIn != null ? fmtMoney(h.costVatIn) + '<span class="hist-cost-tag">cost</span>' : '—');
+        return '<td class="right hist-cell" data-sku="' + escapeHtml(r.sku) + '" data-month="' + mk + '" tabindex="0" role="button">' + display + '</td>';
+      }).join('');
+      return '<tr><td>' + escapeHtml(r.sku) + '<div class="muted">' + escapeHtml(r.description || '') + '</div></td>' + cells + '</tr>';
+    }).join('');
+
+    body.innerHTML =
+      '<p class="hint">Showing selling price (VAT-ex) by month — cost-only months are marked "cost". Click any month to see its approved and effective dates.</p>' +
+      '<div class="history-grid-wrap"><table class="history-grid"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div id="histDetail" class="hist-detail" hidden></div>';
+
+    Array.prototype.forEach.call(body.querySelectorAll('.hist-cell'), function (td) {
+      td.addEventListener('click', function () { showHistDetail(td.getAttribute('data-sku'), td.getAttribute('data-month')); });
+      td.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') showHistDetail(td.getAttribute('data-sku'), td.getAttribute('data-month'));
+      });
+    });
+  }
+
+  function showHistDetail(sku, monthKey) {
+    var r = records.find(function (x) { return x.sku === sku; });
+    var box = document.getElementById('histDetail');
+    if (!r || !box) return;
+    var h = r.priceHistory && r.priceHistory[monthKey];
+    if (!h) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML =
+      '<h3>' + escapeHtml(sku) + ' — ' + HISTORY_MONTH_LABELS[monthKey] + '</h3>' +
+      '<div class="hist-detail-grid">' +
+      '<div><span class="hist-detail-label">Unit cost (VAT-in)</span>' + fmtMoney(h.costVatIn) + '</div>' +
+      '<div><span class="hist-detail-label">Selling price (VAT-ex)</span>' + fmtMoney(h.sellingPriceVatEx) + '</div>' +
+      '<div><span class="hist-detail-label">Date approved</span>' + fmtDate(h.dateApproved) + '</div>' +
+      '<div><span class="hist-detail-label">Date effective</span>' + fmtDate(h.dateEffective) + '</div>' +
+      '</div>';
+  }
+
+  function mergeRecords() {
+    var out = [];
+    activeDocs.forEach(function (v, k) { out.push(Object.assign({ docId: k }, v)); });
+    inactiveDocs.forEach(function (v, k) { out.push(Object.assign({ docId: k }, v)); });
+    out.forEach(function (r) {
+      r.margin = (r.approvedSellingPrice != null && r.approvedCostVatEx != null)
+        ? r.approvedSellingPrice - r.approvedCostVatEx
+        : null;
+    });
+    records = out;
+  }
+
+  function populateCategoryFilter() {
+    var sel = document.getElementById('categoryFilter');
+    var current = sel.value;
+    var cats = Array.from(new Set(records.map(function (r) { return r.category || ''; }).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">All categories</option>' + cats.map(function (c) {
+      return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>';
+    }).join('');
+    sel.value = current;
+  }
+
+  function getFiltered() {
+    var q = filters.search.trim().toLowerCase();
+    var list = records.filter(function (r) {
+      if (filters.status && r.status !== filters.status) return false;
+      if (filters.category && r.category !== filters.category) return false;
+      if (filters.only === 'missingCost' && r.approvedCostVatIn != null) return false;
+      if (filters.only === 'missingPrice' && r.approvedSellingPrice != null) return false;
+      if (filters.only === 'duplicate' && !r.duplicate) return false;
+      if (q) {
+        var hay = [r.sku, r.description, r.client, r.company].join(' ').toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    list.sort(function (a, b) {
+      var av = a[sortKey], bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }
+
+  function renderStats() {
+    var total = records.length;
+    var activeN = records.filter(function (r) { return r.status === 'ACTIVE'; }).length;
+    var inactiveN = total - activeN;
+    var missingCost = records.filter(function (r) { return r.approvedCostVatIn == null; }).length;
+    var missingPrice = records.filter(function (r) { return r.approvedSellingPrice == null; }).length;
+    var dup = records.filter(function (r) { return r.duplicate; }).length;
+
+    var tiles = [
+      { key: null, label: 'Total SKUs', n: total, cls: '' },
+      { key: 'active', label: 'Active', n: activeN, cls: '' },
+      { key: 'inactive', label: 'Inactive', n: inactiveN, cls: '' },
+      { key: 'missingCost', label: 'Missing cost', n: missingCost, cls: 'warn' },
+      { key: 'missingPrice', label: 'Missing selling price', n: missingPrice, cls: 'warn' },
+      { key: 'duplicate', label: 'Duplicate IDs', n: dup, cls: dup ? 'danger' : '' },
+    ];
+    var el = document.getElementById('stats');
+    el.innerHTML = tiles.map(function (t) {
+      var isActive = (t.key === 'active' && filters.status === 'ACTIVE') ||
+        (t.key === 'inactive' && filters.status === 'INACTIVE') ||
+        (t.key === 'missingCost' && filters.only === 'missingCost') ||
+        (t.key === 'missingPrice' && filters.only === 'missingPrice') ||
+        (t.key === 'duplicate' && filters.only === 'duplicate');
+      return '<button type="button" class="stat ' + t.cls + (isActive ? ' active-filter' : '') + '" data-key="' + (t.key || '') + '">' +
+        '<span class="n">' + t.n.toLocaleString() + '</span><span class="l">' + t.label + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('.stat'), function (btn) {
+      btn.addEventListener('click', function () {
+        var key = btn.getAttribute('data-key');
+        if (key === 'active') { filters.status = filters.status === 'ACTIVE' ? '' : 'ACTIVE'; }
+        else if (key === 'inactive') { filters.status = filters.status === 'INACTIVE' ? '' : 'INACTIVE'; }
+        else if (key === 'missingCost' || key === 'missingPrice' || key === 'duplicate') {
+          filters.only = filters.only === key ? null : key;
+        } else {
+          filters.status = ''; filters.only = null; filters.category = ''; filters.search = '';
+          document.getElementById('search').value = '';
+          document.getElementById('categoryFilter').value = '';
+        }
+        document.getElementById('statusFilter').value = filters.status;
+        page = 1;
+        render();
+      });
+    });
+  }
+
+  function renderBanner() {
+    if (bannerDismissed) { document.getElementById('qualityBanner').hidden = true; return; }
+    var dup = records.filter(function (r) { return r.duplicate; }).length;
+    var missingCost = records.filter(function (r) { return r.approvedCostVatIn == null; }).length;
+    var missingPrice = records.filter(function (r) { return r.approvedSellingPrice == null; }).length;
+    if (!dup && !missingCost && !missingPrice) { document.getElementById('qualityBanner').hidden = true; return; }
+    document.getElementById('bannerText').textContent =
+      'Imported from the 2026 price list: ' + missingCost + ' SKUs have no approved cost yet, ' +
+      missingPrice + ' have no approved selling price yet, and ' + dup + ' SKU codes were reused for two different items. Use the stat tiles above to filter and fill these in.';
+    document.getElementById('qualityBanner').hidden = false;
+  }
+
+  function renderRows() {
+    var filtered = getFiltered();
+    var totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    if (page > totalPages) page = totalPages;
+    var start = (page - 1) * pageSize;
+    var pageItems = filtered.slice(start, start + pageSize);
+
+    var tbody = document.getElementById('tbody');
+    if (!pageItems.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--ink-muted);padding:30px;">No SKUs match these filters.</td></tr>';
+    } else {
+      tbody.innerHTML = pageItems.map(function (r) {
+        var flags = '';
+        if (r.approvedCostVatIn == null) flags += '<span class="flag cost">No cost</span>';
+        if (r.approvedSellingPrice == null) flags += '<span class="flag price">No selling price</span>';
+        if (r.duplicate) flags += '<span class="flag dup">Duplicate ID</span>';
+        var marginStr = r.margin == null ? '<span class="empty-val">—</span>' :
+          '<span class="num">' + r.margin.toFixed(4) + '</span>';
+        return '<tr data-doc="' + escapeHtml(r.docId) + '">' +
+          '<td class="sku-cell"><div class="code">' + escapeHtml(r.sku) + '</div>' +
+          (r.company ? '<div class="muted">' + escapeHtml(r.company) + '</div>' : '') + '</td>' +
+          '<td class="desc-cell"><div class="d">' + escapeHtml(r.description) + '</div>' + flags + '</td>' +
+          '<td>' + escapeHtml(r.category || '—') + '<div class="muted">' + escapeHtml(r.client || '') + '</div></td>' +
+          '<td><span class="badge ' + (r.status === 'ACTIVE' ? 'active' : 'inactive') + '">' + r.status + '</span></td>' +
+          '<td class="right num">' + fmtMoney(r.approvedCostVatIn) + '</td>' +
+          '<td class="right num">' + fmtMoney(r.approvedSellingPrice) + '</td>' +
+          '<td class="right">' + marginStr + '</td>' +
+          '<td class="muted">' + fmtDate(r.updatedAt) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    document.getElementById('pageInfo').textContent =
+      filtered.length ? ('Showing ' + (start + 1) + '–' + Math.min(start + pageSize, filtered.length) + ' of ' + filtered.length.toLocaleString() + ' SKUs') : '0 SKUs';
+    document.getElementById('prevPage').disabled = page <= 1;
+    document.getElementById('nextPage').disabled = page >= totalPages;
+
+    Array.prototype.forEach.call(tbody.querySelectorAll('tr[data-doc]'), function (tr) {
+      tr.addEventListener('click', function () {
+        openModal(tr.getAttribute('data-doc'));
+      });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('thead th[data-sort]'), function (th) {
+      var arrow = th.querySelector('.arrow');
+      arrow.textContent = th.getAttribute('data-sort') === sortKey ? (sortDir === 'asc' ? '↑' : '↓') : '';
+    });
+  }
+
+  function render() {
+    if (!records.length && !db) return;
+    renderStats();
+    renderBanner();
+    populateCategoryFilter();
+    document.getElementById('categoryFilter').value = filters.category;
+    renderRows();
+  }
+
+  // --- Access gate & permissions ---
+  function updateSignedInUI() {
+    var el = document.getElementById('signedInInfo');
+    if (!el) return;
+    if (displayName) {
+      var roleTag = role === 'admin' ? ' <span class="view-only-note" style="color:var(--accent);background:var(--accent-soft);">admin</span>' : '';
+      el.innerHTML = 'Signed in as <strong>' + escapeHtml(displayName) + '</strong>' + roleTag +
+        ' · <button type="button" id="changeNameBtn">change</button>' +
+        ' · <button type="button" id="logOutBtn">log out</button>';
+      document.getElementById('changeNameBtn').addEventListener('click', function () {
+        var next = prompt('Your name (used to attribute edits):', displayName);
+        if (next && next.trim()) {
+          displayName = next.trim();
+          lsSet(LS_NAME, displayName);
+          updateSignedInUI();
+        }
+      });
+      document.getElementById('logOutBtn').addEventListener('click', logOut);
+    } else {
+      el.textContent = '';
+    }
+    var logBtn = document.getElementById('viewLogBtn');
+    if (logBtn) logBtn.hidden = role !== 'admin';
+  }
+
+  function logOut() {
+    if (unsubActive) { try { unsubActive(); } catch (e) {} unsubActive = null; }
+    if (unsubInactive) { try { unsubInactive(); } catch (e) {} unsubInactive = null; }
+    try { firebase.auth().signOut(); } catch (e) {}
+    db = null; col = null; canEdit = null;
+    activeDocs.clear(); inactiveDocs.clear(); records = [];
+    document.getElementById('topMeta').innerHTML = '<span class="live-dot"></span>Connecting…';
+    lsClear(LS_GATE); lsClear(LS_NAME); lsClear(LS_ROLE);
+    displayName = ''; role = null;
+    document.getElementById('g_passcode').value = '';
+    document.getElementById('g_name').value = '';
+    document.getElementById('gateError').textContent = '';
+    document.getElementById('appWrap').hidden = true;
+    document.getElementById('gateBackdrop').hidden = false;
+  }
+
+  function openLogModal() {
+    document.getElementById('logBackdrop').hidden = false;
+    var body = document.getElementById('logBody');
+    body.innerHTML = '<p class="muted">Loading…</p>';
+    if (!db) { body.innerHTML = '<p class="muted">Live database is not connected.</p>'; return; }
+    db.collection('accessLog').orderBy('lastSignInAt', 'desc').limit(200).get().then(function (snap) {
+      if (!snap.docs.length) { body.innerHTML = '<p class="muted">No sign-ins recorded yet.</p>'; return; }
+      body.innerHTML = '<table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Name</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Role</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Last sign-in</th>' +
+        '</tr></thead><tbody>' +
+        snap.docs.map(function (d) {
+          var v = d.data();
+          return '<tr>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(v.name || '—') + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(v.role || '—') + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);" class="muted">' + fmtDate(v.lastSignInAt) + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function (err) {
+      var note = err && err.code === 'permission-denied'
+        ? ' — the database rules do not allow reading this log from here.'
+        : ('. ' + (err && err.message ? err.message : ''));
+      body.innerHTML = '<p class="muted">Could not load the sign-in log' + note + '</p>';
+    });
+  }
+  function closeLogModal() { document.getElementById('logBackdrop').hidden = true; }
+
+  function applyEditPermissions() {
+    var addBtn = document.getElementById('addBtn');
+    addBtn.style.display = canEdit === false ? 'none' : '';
+    var meta = document.getElementById('topMeta');
+    var existingNote = meta.querySelector('.view-only-note');
+    if (canEdit === false && !existingNote) {
+      meta.insertAdjacentHTML('beforeend', ' <span class="view-only-note">View-only access</span>');
+    } else if (canEdit !== false && existingNote) {
+      existingNote.remove();
+    }
+  }
+
+  function revealApp() {
+    document.getElementById('gateBackdrop').hidden = true;
+    document.getElementById('appWrap').hidden = false;
+    updateSignedInUI();
+  }
+
+  document.getElementById('gateForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var pass = document.getElementById('g_passcode').value;
+    var name = document.getElementById('g_name').value.trim();
+    var err = document.getElementById('gateError');
+    var enteredRole = pass === ADMIN_PASSCODE ? 'admin' : (pass === USER_PASSCODE ? 'user' : null);
+    if (!enteredRole) {
+      err.textContent = 'Incorrect passcode — check with the database owner.';
+      return;
+    }
+    if (!name) {
+      err.textContent = 'Please enter your name.';
+      return;
+    }
+    err.textContent = '';
+    displayName = name;
+    role = enteredRole;
+    lsSet(LS_NAME, displayName);
+    lsSet(LS_GATE, '1');
+    lsSet(LS_ROLE, role);
+    pendingLogWrite = true;
+    revealApp();
+    init();
+  });
+
+  document.getElementById('viewLogBtn').addEventListener('click', openLogModal);
+  document.getElementById('logCloseBtn').addEventListener('click', closeLogModal);
+  document.getElementById('logBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('logBackdrop')) closeLogModal();
+  });
+
+  document.getElementById('reportBtn').addEventListener('click', openReportModal);
+  document.getElementById('reportCloseBtn').addEventListener('click', closeReportModal);
+  document.getElementById('reportBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('reportBackdrop')) closeReportModal();
+  });
+  document.getElementById('reportClientSelect').addEventListener('change', function (e) {
+    renderClientReport(e.target.value);
+  });
+
+  // --- Modal ---
+  function openModal(docId) {
+    editingDocId = docId || null;
+    var r = editingDocId ? records.find(function (x) { return x.docId === editingDocId; }) : null;
+    var lockedOut = canEdit === false;
+    document.getElementById('modalTitle').textContent = r ? 'Edit SKU' : 'Add SKU';
+    document.getElementById('modalSub').textContent = (r ? ('Last updated ' + fmtDate(r.updatedAt) + (r.updatedBy ? ' — ' + r.updatedBy : '')) : 'This will be added to the shared SKU Data Bank.') + (lockedOut ? ' · View-only access' : '');
+    document.getElementById('f_sku').value = r ? r.sku : '';
+    document.getElementById('f_description').value = r ? r.description : '';
+    document.getElementById('f_category').value = r ? (r.category || '') : '';
+    document.getElementById('f_status').value = r ? r.status : 'ACTIVE';
+    document.getElementById('f_company').value = r ? (r.company || '') : '';
+    document.getElementById('f_client').value = r ? (r.client || '') : '';
+    document.getElementById('f_currency').value = r ? (r.currency || 'PHP') : 'PHP';
+    document.getElementById('f_costVatIn').value = r && r.approvedCostVatIn != null ? r.approvedCostVatIn : '';
+    document.getElementById('f_costVatEx').value = r && r.approvedCostVatEx != null ? r.approvedCostVatEx : '';
+    document.getElementById('f_sellingPrice').value = r && r.approvedSellingPrice != null ? r.approvedSellingPrice : '';
+    document.getElementById('asOfHint').textContent = r && r.sellingPriceAsOf ? ('As of ' + r.sellingPriceAsOf + ' in the source price list') : '';
+    ['f_sku', 'f_description', 'f_category', 'f_status', 'f_company', 'f_client', 'f_currency', 'f_costVatIn', 'f_costVatEx', 'f_sellingPrice'].forEach(function (id) {
+      document.getElementById(id).disabled = lockedOut || (id === 'f_sku' && !!r);
+    });
+    document.getElementById('saveBtn').style.display = lockedOut ? 'none' : '';
+    document.getElementById('deleteBtn').style.display = (r && !lockedOut) ? 'inline' : 'none';
+    document.getElementById('modalBackdrop').hidden = false;
+    document.getElementById('f_sku').focus();
+  }
+  function closeModal() { document.getElementById('modalBackdrop').hidden = true; editingDocId = null; }
+
+  function pathSafe(s) {
+    return String(s).trim().replace(/[^A-Za-z0-9_\-.~:@+]/g, '_').slice(0, 200);
+  }
+
+  document.getElementById('addBtn').addEventListener('click', function () { openModal(null); });
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('modalBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('modalBackdrop')) closeModal();
+  });
+
+  document.getElementById('skuForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    if (!col) { alert('Live database is not connected in this view — changes cannot be saved right now.'); return; }
+    var saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+    try {
+      var num = function (id) {
+        var v = document.getElementById(id).value;
+        return v === '' ? null : parseFloat(v);
+      };
+      var body = {
+        sku: document.getElementById('f_sku').value.trim(),
+        description: document.getElementById('f_description').value.trim(),
+        category: document.getElementById('f_category').value.trim(),
+        status: document.getElementById('f_status').value,
+        company: document.getElementById('f_company').value.trim(),
+        client: document.getElementById('f_client').value.trim(),
+        currency: document.getElementById('f_currency').value.trim() || 'PHP',
+        approvedCostVatIn: num('f_costVatIn'),
+        approvedCostVatEx: num('f_costVatEx'),
+        approvedSellingPrice: num('f_sellingPrice'),
+        updatedAt: new Date().toISOString(),
+        updatedBy: displayName || 'Unknown',
+      };
+      if (editingDocId) {
+        var existing = records.find(function (x) { return x.docId === editingDocId; });
+        body.sellingPriceAsOf = existing ? existing.sellingPriceAsOf || null : null;
+        body.duplicate = existing ? !!existing.duplicate : false;
+        body.costNote = existing ? existing.costNote || null : null;
+        await col.doc(editingDocId).update(body);
+      } else {
+        var docId = pathSafe(body.sku);
+        if (!docId) { alert('Please enter a SKU code.'); saveBtn.disabled = false; saveBtn.textContent = 'Save'; return; }
+        var existingDoc = await col.doc(docId).get();
+        if (existingDoc.exists) {
+          alert('A SKU with this code already exists. Open it from the table to edit it instead.');
+          saveBtn.disabled = false; saveBtn.textContent = 'Save';
+          return;
+        }
+        body.sellingPriceAsOf = null;
+        body.duplicate = false;
+        body.costNote = null;
+        await col.doc(docId).set(body);
+      }
+      closeModal();
+    } catch (err) {
+      var msg = err && err.message ? err.message : 'unknown error';
+      if (canEdit === false || (err && err.code === 'permission-denied')) {
+        alert('Could not save this SKU. The database rules do not allow writes from here right now. (' + msg + ')');
+      } else {
+        alert('Could not save this SKU: ' + msg);
+      }
+    } finally {
+      saveBtn.disabled = false; saveBtn.textContent = 'Save';
+    }
+  });
+
+  document.getElementById('deleteBtn').addEventListener('click', async function () {
+    if (!editingDocId || !col) return;
+    if (!confirm('Remove this SKU from the database? This cannot be undone.')) return;
+    try {
+      await col.doc(editingDocId).delete();
+      closeModal();
+    } catch (err) {
+      var msg = err && err.message ? err.message : 'unknown error';
+      if (canEdit === false || (err && err.code === 'permission-denied')) {
+        alert('Could not delete this SKU. The database rules do not allow writes from here right now. (' + msg + ')');
+      } else {
+        alert('Could not delete this SKU: ' + msg);
+      }
+    }
+  });
+
+  // --- Controls ---
+  document.getElementById('search').addEventListener('input', function (e) {
+    filters.search = e.target.value; page = 1; render();
+  });
+  document.getElementById('statusFilter').addEventListener('change', function (e) {
+    filters.status = e.target.value; page = 1; render();
+  });
+  document.getElementById('categoryFilter').addEventListener('change', function (e) {
+    filters.category = e.target.value; page = 1; render();
+  });
+  document.getElementById('bannerDismiss').addEventListener('click', function () {
+    bannerDismissed = true; document.getElementById('qualityBanner').hidden = true;
+  });
+  document.getElementById('prevPage').addEventListener('click', function () { if (page > 1) { page--; renderRows(); } });
+  document.getElementById('nextPage').addEventListener('click', function () { page++; renderRows(); });
+  Array.prototype.forEach.call(document.querySelectorAll('thead th[data-sort]'), function (th) {
+    th.addEventListener('click', function () {
+      var key = th.getAttribute('data-sort');
+      if (sortKey === key) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+      else { sortKey = key; sortDir = 'asc'; }
+      page = 1;
+      renderRows();
+    });
+  });
+
+  // --- DB wiring ---
+  async function init() {
+    var meta = document.getElementById('topMeta');
+    try {
+      await firebase.auth().signInAnonymously();
+    } catch (e) {
+      meta.innerHTML = 'Live database unavailable — could not authenticate (' + e.message + ').';
+      return;
+    }
+    try {
+      db = firebase.firestore();
+    } catch (e) {
+      meta.innerHTML = 'Live database unavailable — could not connect to Firebase (' + e.message + ').';
+      return;
+    }
+    // Everyone who passes the passcode gate is signed in anonymously above,
+    // so Firestore's rules (require request.auth != null) will accept their
+    // reads and writes. There's no separate per-role permission tier.
+    canEdit = true;
+    applyEditPermissions();
+    if (pendingLogWrite) {
+      pendingLogWrite = false;
+      try {
+        var logId = pathSafe(displayName.toLowerCase());
+        if (logId) {
+          db.collection('accessLog').doc(logId).set({
+            name: displayName,
+            role: role,
+            lastSignInAt: new Date().toISOString(),
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+    col = db.collection('skus');
+    unsubActive = col.where('status', '==', 'ACTIVE').limit(1000).onSnapshot(function (snap) {
+      activeDocs.clear();
+      snap.docs.forEach(function (d) { activeDocs.set(d.id, d.data()); });
+      mergeRecords();
+      meta.innerHTML = '<span class="live-dot"></span>Live — synced ' + new Date().toLocaleTimeString();
+      applyEditPermissions();
+      render();
+    }, function (err) {
+      meta.textContent = 'Sync error: ' + err.message;
+    });
+    unsubInactive = col.where('status', '==', 'INACTIVE').limit(1000).onSnapshot(function (snap) {
+      inactiveDocs.clear();
+      snap.docs.forEach(function (d) { inactiveDocs.set(d.id, d.data()); });
+      mergeRecords();
+      render();
+    }, function (err) {
+      meta.textContent = 'Sync error: ' + err.message;
+    });
+  }
+
+  if (lsGet(LS_GATE) === '1' && displayName) {
+    revealApp();
+    init();
+  }
+})();
+</script>
+</body>
+</html>
