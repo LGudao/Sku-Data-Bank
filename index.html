@@ -8,6 +8,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f0eee5;
@@ -120,10 +121,11 @@
     font-family: inherit;
     color: inherit;
     transition: border-color .15s ease, transform .1s ease;
+    min-width: 0;
   }
   .stat:hover { border-color: var(--accent); }
   .stat.active-filter { border-color: var(--accent); background: var(--accent-soft); }
-  .stat .n { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; display: block; }
+  .stat .n { font-family: "IBM Plex Mono", monospace; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; display: block; overflow-wrap: anywhere; word-break: break-word; line-height: 1.2; }
   .stat .l { font-size: 11.5px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .05em; }
   .stat.warn .n { color: var(--warn); }
   .stat.danger .n { color: var(--danger); }
@@ -316,7 +318,9 @@
   .dash-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
   .dash-section-head h3 { margin: 0; font-size: 13.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-muted); }
   .dash-section-head select { min-width: 180px; }
-  .dash-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .dash-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px; }
+  .dash-metrics .stat { cursor: default; }
+  .dash-metrics .stat .n { font-size: 17px; }
   .dash-bar-track { background: var(--surface-alt); border-radius: 4px; height: 5px; overflow: hidden; margin-top: 5px; min-width: 60px; }
   .dash-bar-fill { height: 100%; background: var(--accent); }
   .dash-note { font-size: 12px; color: var(--ink-muted); margin: -6px 0 14px; }
@@ -344,12 +348,15 @@
     <div class="view-tabs" id="viewTabs">
       <button class="view-tab" id="dashTabBtn" type="button" hidden>Dashboard</button>
       <button class="view-tab" id="skusTabBtn" type="button">SKU Database</button>
+      <button class="view-tab" id="salesReportTabBtn" type="button" hidden>Sales report</button>
       <button class="view-tab" id="reportBtn" type="button">Price history report</button>
     </div>
     <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in &amp; activity log</button>
   </div>
 
   <div id="dashboardView" hidden></div>
+
+  <div id="salesReportView" hidden></div>
 
   <div id="skusView">
 
@@ -446,7 +453,10 @@
     <div class="report-controls">
       <div class="field">
         <label for="reportClientSelect">Client</label>
-        <select id="reportClientSelect"><option value="">Choose a client…</option></select>
+        <select id="reportClientSelect"><option value="">Choose a client…</option><option value="__ALL__">All clients (all transactions)</option></select>
+      </div>
+      <div class="field" style="align-self:flex-end;">
+        <button type="button" class="btn-ghost" id="reportDownloadBtn">Download Excel</button>
       </div>
     </div>
     <div id="reportBody"><p class="muted">Choose a client above to see their 12-month price history.</p></div>
@@ -463,6 +473,21 @@
     <div id="dashDrillBody"><p class="muted">Loading…</p></div>
     <div class="modal-actions" style="justify-content:flex-end;">
       <button type="button" class="btn-ghost" id="dashDrillCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="uploadSalesBackdrop" hidden>
+  <div class="modal report-modal">
+    <h2>Upload monthly sales report</h2>
+    <p class="sub">Upload a raw sales export (Excel or CSV) for a new month. Expected columns: Month, Company, SKU (or Inventory ID), Accounts, Structure, Item Class, Client (or Client Name), Description, U/M, Quantity, Gross Amount, Sales, VAT, UOM Conversion. Unit cost and gross profit are calculated automatically from each SKU's approved cost / price history in the SKU Data Bank.</p>
+    <div class="field" style="margin-bottom:16px;">
+      <label for="uploadSalesFile">File</label>
+      <input id="uploadSalesFile" type="file" accept=".xlsx,.xls,.csv" />
+    </div>
+    <div id="uploadSalesBody"></div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button type="button" class="btn-ghost" id="uploadSalesCloseBtn">Close</button>
     </div>
   </div>
 </div>
@@ -599,6 +624,17 @@
     });
   }
 
+  // sheets: [{ name: 'Sheet name', rows: [ {col1: val, col2: val}, ... ] }]
+  function downloadWorkbook(filename, sheets) {
+    if (typeof XLSX === 'undefined') { alert('Excel export library did not load. Check your internet connection and try again.'); return; }
+    var wb = XLSX.utils.book_new();
+    sheets.forEach(function (s) {
+      var ws = XLSX.utils.json_to_sheet(s.rows, { skipHeader: false });
+      XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+    });
+    XLSX.writeFile(wb, filename);
+  }
+
   var HISTORY_MONTHS = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
   var HISTORY_MONTH_LABELS = {
     '2026-01': 'Jan 2026', '2026-02': 'Feb 2026', '2026-03': 'Mar 2026', '2026-04': 'Apr 2026',
@@ -630,6 +666,11 @@
     var body = document.getElementById('reportBody');
     if (!client) {
       body.innerHTML = '<p class="muted">Choose a client above to see their 12-month price history.</p>';
+      return;
+    }
+    if (client === '__ALL__') {
+      var withHistory = records.filter(function (r) { return r.priceHistory && Object.keys(r.priceHistory).length; });
+      body.innerHTML = '<p class="muted">' + withHistory.length.toLocaleString() + ' SKUs across all clients have price history on file. Use <strong>Download Excel</strong> above to export the full 12-month history for every client.</p>';
       return;
     }
     var skus = records.filter(function (r) {
@@ -685,6 +726,35 @@
       '<div><span class="hist-detail-label">Date approved</span>' + fmtDate(h.dateApproved) + '</div>' +
       '<div><span class="hist-detail-label">Date effective</span>' + fmtDate(h.dateEffective) + '</div>' +
       '</div>';
+  }
+
+  function downloadPriceHistoryReport(client) {
+    if (!client) { alert('Choose a client (or "All clients") above first.'); return; }
+    var isAll = client === '__ALL__';
+    var skus = records.filter(function (r) {
+      return r.priceHistory && Object.keys(r.priceHistory).length && (isAll || (r.client || '').trim() === client);
+    });
+    if (!skus.length) { alert('No price history to export for this selection.'); return; }
+    skus.sort(function (a, b) { return (a.sku || '').localeCompare(b.sku || ''); });
+    var rows = [];
+    skus.forEach(function (r) {
+      HISTORY_MONTHS.forEach(function (mk) {
+        var h = r.priceHistory[mk];
+        if (!h) return;
+        rows.push({
+          'SKU': r.sku,
+          'Description': r.description || '',
+          'Client': r.client || '',
+          'Month': HISTORY_MONTH_LABELS[mk],
+          'Unit Cost (VAT-in)': h.costVatIn != null ? h.costVatIn : '',
+          'Selling Price (VAT-ex)': h.sellingPriceVatEx != null ? h.sellingPriceVatEx : '',
+          'Date Approved': h.dateApproved ? fmtDate(h.dateApproved) : '',
+          'Date Effective': h.dateEffective ? fmtDate(h.dateEffective) : '',
+        });
+      });
+    });
+    var fname = isAll ? 'Price_History_All_Clients.xlsx' : ('Price_History_' + client.replace(/[^A-Za-z0-9]+/g, '_').slice(0, 60) + '.xlsx');
+    downloadWorkbook(fname, [{ name: 'Price History', rows: rows }]);
   }
 
   function mergeRecords() {
@@ -876,16 +946,22 @@
     if (logBtn) logBtn.hidden = role !== 'admin';
     var dashTabBtnEl = document.getElementById('dashTabBtn');
     if (dashTabBtnEl) dashTabBtnEl.hidden = role !== 'admin';
+    var salesReportTabBtnEl = document.getElementById('salesReportTabBtn');
+    if (salesReportTabBtnEl) salesReportTabBtnEl.hidden = !isAdminLike(role);
     if (role !== 'admin' && currentView === 'dashboard') setActiveTab('skus');
+    if (!isAdminLike(role) && currentView === 'salesReport') setActiveTab('skus');
   }
 
   function setActiveTab(view) {
     currentView = view;
     document.getElementById('dashTabBtn').classList.toggle('active', view === 'dashboard');
     document.getElementById('skusTabBtn').classList.toggle('active', view === 'skus');
+    document.getElementById('salesReportTabBtn').classList.toggle('active', view === 'salesReport');
     document.getElementById('dashboardView').hidden = view !== 'dashboard';
     document.getElementById('skusView').hidden = view !== 'skus';
+    document.getElementById('salesReportView').hidden = view !== 'salesReport';
     if (view === 'dashboard') loadDashboard();
+    if (view === 'salesReport') loadSalesReportView();
   }
 
   function logOut() {
@@ -994,6 +1070,7 @@
 
   document.getElementById('dashTabBtn').addEventListener('click', function () { setActiveTab('dashboard'); });
   document.getElementById('skusTabBtn').addEventListener('click', function () { setActiveTab('skus'); });
+  document.getElementById('salesReportTabBtn').addEventListener('click', function () { setActiveTab('salesReport'); });
 
   document.getElementById('gateForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -1033,6 +1110,9 @@
   });
   document.getElementById('reportClientSelect').addEventListener('change', function (e) {
     renderClientReport(e.target.value);
+  });
+  document.getElementById('reportDownloadBtn').addEventListener('click', function () {
+    downloadPriceHistoryReport(document.getElementById('reportClientSelect').value);
   });
 
   // --- Dashboard ---
@@ -1328,6 +1408,593 @@
       dashAccountMonthFilter = e.target.value;
       renderAccountsSection();
     }
+  });
+
+  // --- Sales report tab (view / filter / download / upload new months) ---
+  var salesReportFilterType = 'all';
+  var salesReportFilterValue = '';
+  var salesReportCurrentRows = [];
+  var salesReportClientsCache = null;
+  var srMonthOptionsHtml = '', srClientOptionsHtml = '', srAccountOptionsHtml = '';
+
+  function loadSalesReportView() {
+    var wrap = document.getElementById('salesReportView');
+    wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Loading…</p>';
+    if (!db) { wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Live database is not connected.</p>'; return; }
+    var needDashboard = !dashboardCache;
+    var needClients = !salesReportClientsCache;
+    Promise.all([
+      needDashboard ? db.collection('salesDashboard').doc('summary').get() : Promise.resolve(null),
+      needClients ? db.collection('salesSummaryClient').get() : Promise.resolve(null),
+    ]).then(function (results) {
+      if (results[0]) dashboardCache = results[0].exists ? results[0].data() : { months: [], accounts: [] };
+      if (results[1]) salesReportClientsCache = results[1].docs.map(function (d) { return d.data().label || d.id; }).sort(function (a, b) { return a.localeCompare(b); });
+      renderSalesReportShell();
+      fetchAndRenderSalesReport();
+    }).catch(function (err) {
+      wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Could not load. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+
+  function renderSalesReportShell() {
+    var wrap = document.getElementById('salesReportView');
+    var d = dashboardCache || { months: [], accounts: [] };
+    srMonthOptionsHtml = (d.months || []).map(function (m) { return '<option value="' + escapeHtml(m.key) + '">' + escapeHtml(m.label) + '</option>'; }).join('');
+    srClientOptionsHtml = (salesReportClientsCache || []).map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+    srAccountOptionsHtml = (d.accounts || []).map(function (a) { return '<option value="' + escapeHtml(a.account) + '">' + escapeHtml(a.account) + '</option>'; }).join('');
+
+    wrap.innerHTML =
+      '<div class="dash-wrap">' +
+        '<div class="dash-head"><h2>Sales Report</h2><p>Browse raw sales transactions and export them to Excel.</p></div>' +
+        '<div class="dash-section">' +
+          '<div class="dash-section-head" style="gap:14px;">' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+              '<select id="srFilterType">' +
+                '<option value="all">All transactions</option>' +
+                '<option value="month">By month</option>' +
+                '<option value="client">By client</option>' +
+                '<option value="account">By account</option>' +
+              '</select>' +
+              '<select id="srFilterValue" hidden></select>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+              '<button type="button" class="btn-ghost" id="openUploadSalesBtn">Upload monthly sales report</button>' +
+              '<button type="button" class="btn-ghost" id="srDownloadBtn">Download Excel</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="srTableWrap"><p class="muted">Loading…</p></div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('srFilterType').value = salesReportFilterType;
+    updateSrFilterValueSelect();
+  }
+
+  function updateSrFilterValueSelect() {
+    var sel = document.getElementById('srFilterValue');
+    if (!sel) return;
+    if (salesReportFilterType === 'month') { sel.innerHTML = srMonthOptionsHtml; sel.hidden = false; }
+    else if (salesReportFilterType === 'client') { sel.innerHTML = '<option value="">Choose a client…</option>' + srClientOptionsHtml; sel.hidden = false; }
+    else if (salesReportFilterType === 'account') { sel.innerHTML = '<option value="">Choose an account…</option>' + srAccountOptionsHtml; sel.hidden = false; }
+    else { sel.innerHTML = ''; sel.hidden = true; }
+    if (salesReportFilterValue) sel.value = salesReportFilterValue;
+  }
+
+  function fetchAndRenderSalesReport() {
+    var tableWrap = document.getElementById('srTableWrap');
+    if (!tableWrap) return;
+    tableWrap.innerHTML = '<p class="muted">Loading…</p>';
+    var type = salesReportFilterType, value = salesReportFilterValue;
+    var query;
+    if (type === 'all') query = db.collection('sales').get();
+    else if (type === 'month' && value) query = db.collection('sales').where('monthKey', '==', value).get();
+    else if (type === 'client' && value) query = db.collection('sales').where('client', '==', value).get();
+    else if (type === 'account' && value) query = db.collection('sales').where('accounts', '==', value).get();
+    else { tableWrap.innerHTML = '<p class="muted">Choose a value above.</p>'; salesReportCurrentRows = []; return; }
+
+    query.then(function (snap) {
+      var rows = snap.docs.map(function (d) { return d.data(); });
+      rows.sort(function (a, b) {
+        if (a.monthKey !== b.monthKey) return a.monthKey < b.monthKey ? -1 : 1;
+        return (a.sku || '').localeCompare(b.sku || '');
+      });
+      salesReportCurrentRows = rows;
+      renderSalesReportTable(rows);
+    }).catch(function (err) {
+      tableWrap.innerHTML = '<p class="muted">Could not load transactions. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+
+  function renderSalesReportTable(rows) {
+    var tableWrap = document.getElementById('srTableWrap');
+    if (!rows.length) { tableWrap.innerHTML = '<p class="muted">No transactions found.</p>'; return; }
+    var CAP = 500;
+    var shown = rows.slice(0, CAP);
+    var body = shown.map(function (t) {
+      var noteTag = t.matched ? '' : '<div class="muted">No cost match</div>';
+      return '<tr>' +
+        '<td>' + escapeHtml(t.monthLabel || t.monthKey) + '</td>' +
+        '<td><div class="code">' + escapeHtml(t.sku) + '</div><div class="muted">' + escapeHtml(t.description || '') + '</div></td>' +
+        '<td>' + escapeHtml(t.client || '') + '</td>' +
+        '<td>' + escapeHtml(t.accounts || '') + '</td>' +
+        '<td class="right">' + (t.quantity != null ? t.quantity.toLocaleString() : '—') + '</td>' +
+        '<td class="right">' + fmtPeso(t.sales) + '</td>' +
+        '<td class="right">' + (t.unitCost != null ? t.unitCost.toFixed(4) : '<span class="empty-val">—</span>') + '</td>' +
+        '<td class="right">' + fmtPeso(t.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(t.grossProfitRate) + noteTag + '</td>' +
+        '</tr>';
+    }).join('');
+    tableWrap.innerHTML =
+      '<div class="sales-grid-wrap" style="max-height:60vh;"><table class="sales-grid"><thead><tr>' +
+      '<th>Month</th><th>SKU</th><th>Client</th><th>Account</th><th class="right">Qty</th><th class="right">Sales</th>' +
+      '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<p class="hint">' + (rows.length > CAP ? ('Showing first ' + CAP.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' rows on screen — ') : '') + 'Download Excel exports all ' + rows.length.toLocaleString() + ' row(s).</p>';
+  }
+
+  function downloadSalesReportExcel() {
+    if (!salesReportCurrentRows.length) { alert('No transactions to export for this selection.'); return; }
+    var rows = salesReportCurrentRows.map(function (t) {
+      return {
+        'Month': t.monthLabel || t.monthKey, 'Company': t.company || '', 'SKU': t.sku, 'Description': t.description || '',
+        'Client': t.client || '', 'Account': t.accounts || '', 'Structure': t.structure || '', 'Item Class': t.itemClass || '',
+        'U/M': t.um || '', 'Quantity': t.quantity, 'Sales': t.sales, 'Unit Cost (VAT-ex)': t.unitCost != null ? t.unitCost : '',
+        'Total Unit Cost': t.totalUnitCost != null ? t.totalUnitCost : '', 'Gross Profit': t.grossProfit, 'GP Rate': t.grossProfitRate,
+        'Cost Matched': t.matched ? 'Yes' : 'No',
+      };
+    });
+    var label = salesReportFilterType === 'all' ? 'All_Transactions' : (salesReportFilterType + '_' + (salesReportFilterValue || '').replace(/[^A-Za-z0-9]+/g, '_'));
+    downloadWorkbook('Sales_Report_' + label.slice(0, 60) + '.xlsx', [{ name: 'Sales Report', rows: rows }]);
+  }
+
+  document.getElementById('salesReportView').addEventListener('change', function (e) {
+    if (e.target.id === 'srFilterType') {
+      salesReportFilterType = e.target.value;
+      salesReportFilterValue = '';
+      updateSrFilterValueSelect();
+      fetchAndRenderSalesReport();
+    } else if (e.target.id === 'srFilterValue') {
+      salesReportFilterValue = e.target.value;
+      fetchAndRenderSalesReport();
+    }
+  });
+  document.getElementById('salesReportView').addEventListener('click', function (e) {
+    if (e.target.id === 'openUploadSalesBtn') {
+      document.getElementById('uploadSalesBody').innerHTML = '';
+      document.getElementById('uploadSalesFile').value = '';
+      document.getElementById('uploadSalesBackdrop').hidden = false;
+    } else if (e.target.id === 'srDownloadBtn') {
+      downloadSalesReportExcel();
+    }
+  });
+
+  // --- Monthly sales report upload ---
+  var MONTH_FULL_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var MONTH_NAME_TO_NUM = {
+    JANUARY: 1, FEBRUARY: 2, MARCH: 3, APRIL: 4, MAY: 5, JUNE: 6, JULY: 7, AUGUST: 8, SEPTEMBER: 9, OCTOBER: 10, NOVEMBER: 11, DECEMBER: 12,
+    JAN: 1, FEB: 2, MAR: 3, APR: 4, JUN: 6, JUL: 7, AUG: 8, SEP: 9, SEPT: 9, OCT: 10, NOV: 11, DEC: 12,
+  };
+  var UPLOAD_FIELD_ALIASES = {
+    month: ['MONTH'], company: ['COMPANY'], sku: ['SKU', 'INVENTORYID'], accounts: ['ACCOUNTS', 'ACCOUNT'],
+    structure: ['STRUCTURE'], itemClass: ['ITEMCLASS'], client: ['CLIENTNAME', 'CLIENT'], description: ['DESCRIPTION'],
+    um: ['UM'], quantity: ['QUANTITY', 'QTY'], grossAmount: ['GROSSAMOUNT'], sales: ['SALES'], vat: ['VAT'], uomConversion: ['UOMCONVERSION'],
+  };
+
+  function normalizeHeader(h) { return String(h || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function parseMonthKey(value) {
+    if (value instanceof Date && !isNaN(value)) {
+      var y = value.getFullYear(), m = value.getMonth() + 1;
+      return { key: y + '-' + pad2(m), label: MONTH_FULL_NAMES[m - 1] + ' ' + y };
+    }
+    var s = String(value == null ? '' : value).trim();
+    if (!s) return null;
+    var m1 = s.match(/^(\d{4})-(\d{1,2})$/);
+    if (m1) { var y1 = +m1[1], mo1 = +m1[2]; if (mo1 >= 1 && mo1 <= 12) return { key: y1 + '-' + pad2(mo1), label: MONTH_FULL_NAMES[mo1 - 1] + ' ' + y1 }; }
+    var m2 = s.match(/^([A-Za-z]+)\.?\s+(\d{4})$/);
+    if (m2) {
+      var mo2 = MONTH_NAME_TO_NUM[m2[1].toUpperCase()];
+      if (mo2) return { key: m2[2] + '-' + pad2(mo2), label: MONTH_FULL_NAMES[mo2 - 1] + ' ' + m2[2] };
+    }
+    var m3 = s.match(/^(\d{1,2})\/(\d{4})$/);
+    if (m3) { var mo3 = +m3[1], y3 = +m3[2]; if (mo3 >= 1 && mo3 <= 12) return { key: y3 + '-' + pad2(mo3), label: MONTH_FULL_NAMES[mo3 - 1] + ' ' + y3 }; }
+    return null;
+  }
+
+  function monthKeyToIndex(mk) {
+    var parts = String(mk).split('-');
+    return (+parts[0]) * 12 + (+parts[1]);
+  }
+  function matchCost(skuCode, monthKey) {
+    var rec = records.find(function (r) { return r.sku === skuCode; });
+    if (!rec) return { unitCostVatEx: null, method: 'no_sku_match' };
+    var hist = rec.priceHistory || {};
+    if (hist[monthKey] && hist[monthKey].costVatIn != null) {
+      return { unitCostVatEx: hist[monthKey].costVatIn / 1.12, method: 'exact_month' };
+    }
+    var targetIdx = monthKeyToIndex(monthKey);
+    var best = null, bestDist = Infinity;
+    Object.keys(hist).forEach(function (mk) {
+      var h = hist[mk];
+      if (h && h.costVatIn != null) {
+        var dist = Math.abs(monthKeyToIndex(mk) - targetIdx);
+        if (dist < bestDist) { bestDist = dist; best = mk; }
+      }
+    });
+    if (best) return { unitCostVatEx: hist[best].costVatIn / 1.12, method: 'nearest_month' };
+    if (rec.approvedCostVatEx != null) return { unitCostVatEx: rec.approvedCostVatEx, method: 'flat_current' };
+    if (rec.approvedCostVatIn != null) return { unitCostVatEx: rec.approvedCostVatIn / 1.12, method: 'flat_current' };
+    return { unitCostVatEx: null, method: 'unmatched' };
+  }
+
+  function handleUploadFile(file) {
+    var body = document.getElementById('uploadSalesBody');
+    if (typeof XLSX === 'undefined') { body.innerHTML = '<p class="muted">The Excel library did not load — check your internet connection and reopen this page.</p>'; return; }
+    body.innerHTML = '<p class="muted">Reading file…</p>';
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, { type: 'array', cellDates: true });
+        var sheet = wb.Sheets[wb.SheetNames[0]];
+        var rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true });
+        processUploadRows(rawRows);
+      } catch (err) {
+        body.innerHTML = '<p class="muted">Could not read this file. ' + (err && err.message ? err.message : '') + '</p>';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function processUploadRows(rawRows) {
+    var body = document.getElementById('uploadSalesBody');
+    if (!rawRows.length) { body.innerHTML = '<p class="muted">This file has no rows.</p>'; return; }
+    var actualHeaders = Object.keys(rawRows[0]);
+    var headerMap = {};
+    actualHeaders.forEach(function (h) {
+      var norm = normalizeHeader(h);
+      Object.keys(UPLOAD_FIELD_ALIASES).forEach(function (field) {
+        if (!headerMap[field] && UPLOAD_FIELD_ALIASES[field].indexOf(norm) !== -1) headerMap[field] = h;
+      });
+    });
+    var required = ['month', 'sku', 'client', 'quantity', 'sales'];
+    var missing = required.filter(function (f) { return !headerMap[f]; });
+    if (missing.length) {
+      body.innerHTML = '<p class="muted">This file is missing required column(s): <strong>' + missing.join(', ') + '</strong>. Found columns: ' + actualHeaders.map(escapeHtml).join(', ') + '</p>';
+      return;
+    }
+
+    var parsedRows = [];
+    var monthParseErrors = 0;
+    rawRows.forEach(function (raw) {
+      var mk = parseMonthKey(raw[headerMap.month]);
+      if (!mk) { monthParseErrors++; return; }
+      var skuVal = String(raw[headerMap.sku] || '').trim();
+      if (!skuVal) return;
+      parsedRows.push({
+        monthKey: mk.key, monthLabel: mk.label,
+        company: headerMap.company ? String(raw[headerMap.company] || '') : '',
+        sku: skuVal,
+        accounts: headerMap.accounts ? String(raw[headerMap.accounts] || '') : '',
+        structure: headerMap.structure ? (String(raw[headerMap.structure] || '').trim() || 'UNSPECIFIED') : 'UNSPECIFIED',
+        itemClass: headerMap.itemClass ? (String(raw[headerMap.itemClass] || '').trim() || 'UNSPECIFIED') : 'UNSPECIFIED',
+        client: String(raw[headerMap.client] || '').trim(),
+        description: headerMap.description ? String(raw[headerMap.description] || '') : '',
+        um: headerMap.um ? String(raw[headerMap.um] || '') : '',
+        quantity: Number(raw[headerMap.quantity]) || 0,
+        grossAmount: headerMap.grossAmount ? (Number(raw[headerMap.grossAmount]) || null) : null,
+        sales: Number(raw[headerMap.sales]) || 0,
+        vat: headerMap.vat ? (Number(raw[headerMap.vat]) || 0) : 0,
+        uomConversion: headerMap.uomConversion ? (Number(raw[headerMap.uomConversion]) || 1) : 1,
+      });
+    });
+
+    if (!parsedRows.length) {
+      body.innerHTML = '<p class="muted">No usable rows were found' + (monthParseErrors ? (' (' + monthParseErrors + ' row(s) had an unrecognized Month value — use a format like "August 2026").') : '.') + '</p>';
+      return;
+    }
+
+    var monthKeys = Array.from(new Set(parsedRows.map(function (r) { return r.monthKey; }))).sort();
+    var monthLabelByKey = {};
+    parsedRows.forEach(function (r) { monthLabelByKey[r.monthKey] = r.monthLabel; });
+
+    body.innerHTML = '<p class="muted">Checking for existing data…</p>';
+    db.collection('salesSummaryMonth').get().then(function (snap) {
+      var existingIds = snap.docs.map(function (d) { return d.id; });
+      var existingMonths = monthKeys.filter(function (mk) { return existingIds.indexOf(mk) !== -1; });
+      var summary = '<p>Found <strong>' + parsedRows.length.toLocaleString() + '</strong> row(s) across ' + monthKeys.length + ' month(s): ' +
+        monthKeys.map(function (mk) { return escapeHtml(monthLabelByKey[mk]) + ' (' + parsedRows.filter(function (r) { return r.monthKey === mk; }).length.toLocaleString() + ' rows)'; }).join(', ') + '.</p>';
+      if (monthParseErrors) summary += '<p class="dash-note">' + monthParseErrors + ' row(s) were skipped — unrecognized Month value.</p>';
+      if (existingMonths.length) {
+        summary += '<p class="dash-note" style="color:var(--warn);">⚠️ ' + existingMonths.map(function (mk) { return escapeHtml(monthLabelByKey[mk]); }).join(', ') +
+          ' already ' + (existingMonths.length > 1 ? 'exist' : 'exists') + ' in the system. Continuing will <strong>replace</strong> all existing data for ' +
+          (existingMonths.length > 1 ? 'these months' : 'this month') + '.</p>';
+      }
+      summary += '<div class="modal-actions" style="justify-content:flex-start;padding:0;margin-top:10px;"><button type="button" class="btn-primary" id="confirmUploadBtn">' +
+        (existingMonths.length ? 'Replace & Continue' : 'Continue') + '</button></div>';
+      body.innerHTML = summary;
+      document.getElementById('confirmUploadBtn').addEventListener('click', function () {
+        runUploadImport(parsedRows, monthKeys);
+      });
+    }).catch(function (err) {
+      body.innerHTML = '<p class="muted">Could not check existing months. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+
+  function deleteDocsBatched(collectionName, ids) {
+    var chunkSize = 450;
+    var chain = Promise.resolve();
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      (function (chunk) {
+        chain = chain.then(function () {
+          var batch = db.batch();
+          chunk.forEach(function (id) { batch.delete(db.collection(collectionName).doc(id)); });
+          return batch.commit();
+        });
+      })(ids.slice(i, i + chunkSize));
+    }
+    return chain;
+  }
+  function writeDocsBatched(collectionName, docsObj) {
+    var entries = Object.keys(docsObj).map(function (k) { return [k, docsObj[k]]; });
+    var chunkSize = 450;
+    var chain = Promise.resolve();
+    for (var i = 0; i < entries.length; i += chunkSize) {
+      (function (chunk) {
+        chain = chain.then(function () {
+          var batch = db.batch();
+          chunk.forEach(function (pair) { batch.set(db.collection(collectionName).doc(pair[0]), pair[1]); });
+          return batch.commit();
+        });
+      })(entries.slice(i, i + chunkSize));
+    }
+    return chain;
+  }
+  function wipeAndWriteCollection(collectionName, docsObj) {
+    return db.collection(collectionName).get().then(function (snap) {
+      return deleteDocsBatched(collectionName, snap.docs.map(function (d) { return d.id; }));
+    }).then(function () {
+      return writeDocsBatched(collectionName, docsObj);
+    });
+  }
+
+  function computeAggregates(allTxns) {
+    var monthOrder = Array.from(new Set(allTxns.map(function (t) { return t.monthKey; }))).sort();
+    var totalSales = 0, totalGp = 0, totalCost = 0;
+    allTxns.forEach(function (t) { totalSales += t.sales || 0; totalGp += t.grossProfit || 0; totalCost += t.totalUnitCost || 0; });
+
+    function groupBy(arr, keyFn) {
+      var map = {};
+      arr.forEach(function (item) { var k = keyFn(item); (map[k] = map[k] || []).push(item); });
+      return map;
+    }
+    function sum(arr, f) { return arr.reduce(function (s, x) { return s + (f(x) || 0); }, 0); }
+    function uniqueCount(arr, f) { return new Set(arr.map(f)).size; }
+    function mode(arr) {
+      var counts = {}, best = null, bestC = -1;
+      arr.forEach(function (v) { if (v) counts[v] = (counts[v] || 0) + 1; });
+      Object.keys(counts).forEach(function (k) { if (counts[k] > bestC) { bestC = counts[k]; best = k; } });
+      return best || '';
+    }
+
+    var byMonth = groupBy(allTxns, function (t) { return t.monthKey; });
+    var months = [];
+    var prevSales = null;
+    monthOrder.forEach(function (mk) {
+      var sub = byMonth[mk] || [];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var cost = sum(sub, function (t) { return t.totalUnitCost; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      var rate = sales ? gp / sales : 0;
+      var pct = totalSales ? sales / totalSales : 0;
+      var mom = prevSales ? (sales - prevSales) / prevSales : null;
+      months.push({ key: mk, label: (sub[0] && sub[0].monthLabel) || mk, sales: sales, cost: cost, grossProfit: gp, grossProfitRate: rate, pctOfTotalSales: pct, momGrowth: mom });
+      prevSales = sales;
+    });
+
+    var bestMonthSales = months.reduce(function (a, b) { return (!a || b.sales > a.sales) ? b : a; }, null);
+    var weakMonthSales = months.reduce(function (a, b) { return (!a || b.sales < a.sales) ? b : a; }, null);
+    var bestMonthGp = months.reduce(function (a, b) { return (!a || b.grossProfitRate > a.grossProfitRate) ? b : a; }, null);
+
+    var bySku = groupBy(allTxns, function (t) { return t.sku; });
+    var skuRows = Object.keys(bySku).map(function (sku) {
+      var sub = bySku[sku];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      return {
+        sku: sku, sales: sales, grossProfit: gp, quantity: sum(sub, function (t) { return t.quantity; }),
+        txnCount: sub.length, unmatchedCount: sub.filter(function (t) { return !t.matched; }).length,
+        description: mode(sub.map(function (t) { return t.description; })), structure: mode(sub.map(function (t) { return t.structure; })),
+        grossProfitRate: sales ? gp / sales : 0, pctOfTotalSales: totalSales ? sales / totalSales : 0,
+      };
+    }).sort(function (a, b) { return b.sales - a.sales; });
+
+    var top10 = skuRows.slice(0, 10).map(function (s, i) {
+      return { rank: i + 1, sku: s.sku, description: s.description, structure: s.structure, sales: s.sales, pctOfTotalSales: s.pctOfTotalSales, grossProfit: s.grossProfit, grossProfitRate: s.grossProfitRate };
+    });
+    var top10SalesSum = sum(top10, function (s) { return s.sales; });
+    var top10GpSum = sum(top10, function (s) { return s.grossProfit; });
+    var top10Total = { sales: top10SalesSum, pctOfTotalSales: totalSales ? top10SalesSum / totalSales : 0, grossProfit: top10GpSum, grossProfitRate: top10SalesSum ? top10GpSum / top10SalesSum : 0 };
+
+    var byStructure = groupBy(allTxns, function (t) { return t.structure; });
+    var structures = Object.keys(byStructure).map(function (st) {
+      var sub = byStructure[st];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      return { structure: st, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, pctOfTotalSales: totalSales ? sales / totalSales : 0 };
+    }).sort(function (a, b) { return b.sales - a.sales; }).map(function (s, i) { s.rank = i + 1; return s; });
+    var structuresTotal = { sales: sum(structures, function (s) { return s.sales; }), grossProfit: sum(structures, function (s) { return s.grossProfit; }), grossProfitRate: 0 };
+    structuresTotal.grossProfitRate = structuresTotal.sales ? structuresTotal.grossProfit / structuresTotal.sales : 0;
+
+    var byAccount = groupBy(allTxns, function (t) { return t.accounts; });
+    var accounts = Object.keys(byAccount).map(function (ac) {
+      var sub = byAccount[ac];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      return { account: ac, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, pctOfPeriodSales: totalSales ? sales / totalSales : 0, skuCount: uniqueCount(sub, function (t) { return t.sku; }) };
+    }).sort(function (a, b) { return b.sales - a.sales; }).map(function (a, i) { a.rank = i + 1; return a; });
+    var accountsTotal = { sales: sum(accounts, function (a) { return a.sales; }), grossProfit: sum(accounts, function (a) { return a.grossProfit; }), grossProfitRate: 0, skuCount: uniqueCount(allTxns, function (t) { return t.sku; }) };
+    accountsTotal.grossProfitRate = accountsTotal.sales ? accountsTotal.grossProfit / accountsTotal.sales : 0;
+
+    var accountsByMonth = {}, accountRankMatrix = {};
+    accounts.forEach(function (a) { accountRankMatrix[a.account] = {}; });
+    monthOrder.forEach(function (mk) {
+      var sub = byMonth[mk] || [];
+      var byAcctMonth = groupBy(sub, function (t) { return t.accounts; });
+      var monthTotalSales = sum(sub, function (t) { return t.sales; });
+      var list = Object.keys(byAcctMonth).map(function (ac) {
+        var s2 = byAcctMonth[ac];
+        var sales = sum(s2, function (t) { return t.sales; });
+        var gp = sum(s2, function (t) { return t.grossProfit; });
+        return { account: ac, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, pctOfPeriodSales: monthTotalSales ? sales / monthTotalSales : 0, skuCount: uniqueCount(s2, function (t) { return t.sku; }) };
+      }).sort(function (a, b) { return b.sales - a.sales; }).map(function (a, i) { a.rank = i + 1; return a; });
+      accountsByMonth[mk] = list;
+      list.forEach(function (a) { if (!accountRankMatrix[a.account]) accountRankMatrix[a.account] = {}; accountRankMatrix[a.account][mk] = a.rank; });
+    });
+
+    var byItemClass = groupBy(allTxns, function (t) { return t.itemClass; });
+    var itemClasses = Object.keys(byItemClass).map(function (ic) {
+      var sub = byItemClass[ic];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      return { itemClass: ic, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, pctOfTotalSales: totalSales ? sales / totalSales : 0 };
+    }).sort(function (a, b) { return b.sales - a.sales; }).map(function (ic, i) { ic.rank = i + 1; return ic; });
+    var itemClassesTotal = { sales: sum(itemClasses, function (i) { return i.sales; }), grossProfit: sum(itemClasses, function (i) { return i.grossProfit; }), grossProfitRate: 0 };
+    itemClassesTotal.grossProfitRate = itemClassesTotal.sales ? itemClassesTotal.grossProfit / itemClassesTotal.sales : 0;
+
+    var itemClassByMonth = {}, itemClassGpRateByMonth = {}, itemClassMonthTotals = {};
+    itemClasses.forEach(function (ic) { itemClassByMonth[ic.itemClass] = {}; itemClassGpRateByMonth[ic.itemClass] = {}; });
+    monthOrder.forEach(function (mk) {
+      var sub = byMonth[mk] || [];
+      itemClassMonthTotals[mk] = sum(sub, function (t) { return t.sales; });
+      var byIcMonth = groupBy(sub, function (t) { return t.itemClass; });
+      Object.keys(byIcMonth).forEach(function (ic) {
+        var s2 = byIcMonth[ic];
+        var sales = sum(s2, function (t) { return t.sales; });
+        var gp = sum(s2, function (t) { return t.grossProfit; });
+        if (!itemClassByMonth[ic]) itemClassByMonth[ic] = {};
+        if (!itemClassGpRateByMonth[ic]) itemClassGpRateByMonth[ic] = {};
+        itemClassByMonth[ic][mk] = sales;
+        itemClassGpRateByMonth[ic][mk] = sales ? gp / sales : 0;
+      });
+    });
+
+    var keyMetrics = {
+      totalSales: totalSales, totalGrossProfit: totalGp, blendedGpRate: totalSales ? totalGp / totalSales : 0,
+      averageMonthlySales: monthOrder.length ? totalSales / monthOrder.length : 0,
+      bestMonthBySales: bestMonthSales ? bestMonthSales.label : '—', weakestMonthBySales: weakMonthSales ? weakMonthSales.label : '—',
+      bestMonthByGpRate: bestMonthGp ? bestMonthGp.label : '—', activeSkus: uniqueCount(allTxns, function (t) { return t.sku; }),
+      productStructures: uniqueCount(allTxns, function (t) { return t.structure; }), salesAccounts: uniqueCount(allTxns, function (t) { return t.accounts; }),
+      top10SkuPct: top10Total.pctOfTotalSales, topStructure: structures[0] ? structures[0].structure : '—', topStructurePct: structures[0] ? structures[0].pctOfTotalSales : 0,
+    };
+
+    var periodLabel = months.length ? (months[0].label + (months.length > 1 ? (' to ' + months[months.length - 1].label) : '')) : '—';
+
+    var dashboard = {
+      meta: { sourceFile: 'In-app upload', periodLabel: periodLabel, generatedAt: new Date().toISOString().slice(0, 10) },
+      keyMetrics: keyMetrics, months: months,
+      monthsTotal: { sales: totalSales, cost: totalCost, grossProfit: totalGp, grossProfitRate: totalSales ? totalGp / totalSales : 0, pctOfTotalSales: 1 },
+      top10Skus: top10, top10Total: top10Total,
+      structures: structures, structuresTotal: structuresTotal,
+      accounts: accounts, accountsTotal: accountsTotal,
+      accountsByMonth: accountsByMonth, accountRankMatrix: accountRankMatrix,
+      itemClasses: itemClasses, itemClassesTotal: itemClassesTotal,
+      itemClassByMonth: itemClassByMonth, itemClassGpRateByMonth: itemClassGpRateByMonth, itemClassMonthTotals: itemClassMonthTotals,
+    };
+
+    var summaryMonth = {};
+    monthOrder.forEach(function (mk) {
+      var sub = byMonth[mk] || [];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      summaryMonth[mk] = { key: mk, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, quantity: sum(sub, function (t) { return t.quantity; }), txnCount: sub.length, unmatchedCount: sub.filter(function (t) { return !t.matched; }).length, label: (sub[0] && sub[0].monthLabel) || mk };
+    });
+    var byClient = groupBy(allTxns, function (t) { return t.client; });
+    var summaryClient = {};
+    Object.keys(byClient).forEach(function (cl) {
+      var sub = byClient[cl];
+      var sales = sum(sub, function (t) { return t.sales; });
+      var gp = sum(sub, function (t) { return t.grossProfit; });
+      summaryClient[pathSafe(cl)] = { key: cl, sales: sales, grossProfit: gp, grossProfitRate: sales ? gp / sales : 0, quantity: sum(sub, function (t) { return t.quantity; }), txnCount: sub.length, unmatchedCount: sub.filter(function (t) { return !t.matched; }).length, label: cl };
+    });
+    var summarySku = {};
+    skuRows.forEach(function (s) {
+      summarySku[pathSafe(s.sku)] = { key: s.sku, sales: s.sales, grossProfit: s.grossProfit, grossProfitRate: s.grossProfitRate, quantity: s.quantity, txnCount: s.txnCount, unmatchedCount: s.unmatchedCount, label: s.sku, description: s.description };
+    });
+
+    return { dashboard: dashboard, summaryMonth: summaryMonth, summaryClient: summaryClient, summarySku: summarySku };
+  }
+
+  function runUploadImport(parsedRows, monthKeys) {
+    var body = document.getElementById('uploadSalesBody');
+    body.innerHTML = '<p class="muted">Matching costs against the SKU Data Bank…</p>';
+    var matchCounts = {};
+    var newTxns = parsedRows.map(function (r, i) {
+      var m = matchCost(r.sku, r.monthKey);
+      matchCounts[m.method] = (matchCounts[m.method] || 0) + 1;
+      var unitCost = m.unitCostVatEx;
+      var totalUnitCost = unitCost != null ? unitCost * r.quantity : 0;
+      var grossProfit = r.sales - totalUnitCost;
+      var grossProfitRate = r.sales ? grossProfit / r.sales : 0;
+      return {
+        docId: r.monthKey + '_' + String(i + 1).padStart(6, '0'),
+        monthKey: r.monthKey, monthLabel: r.monthLabel, company: r.company, sku: r.sku, accounts: r.accounts,
+        structure: r.structure, itemClass: r.itemClass, client: r.client, description: r.description, um: r.um,
+        quantity: r.quantity, grossAmount: r.grossAmount != null ? r.grossAmount : (r.sales + r.vat), sales: r.sales, vat: r.vat,
+        unitCost: unitCost, totalUnitCost: totalUnitCost, grossProfit: grossProfit, grossProfitRate: grossProfitRate, matched: unitCost != null,
+      };
+    });
+
+    body.innerHTML = '<p class="muted">Fetching existing transactions…</p>';
+    db.collection('sales').get().then(function (snap) {
+      var existing = snap.docs.map(function (d) { return d.data(); });
+      var kept = existing.filter(function (t) { return monthKeys.indexOf(t.monthKey) === -1; });
+      var toDeleteIds = snap.docs.filter(function (d) { return monthKeys.indexOf(d.data().monthKey) !== -1; }).map(function (d) { return d.id; });
+      var allTxns = kept.concat(newTxns);
+
+      body.innerHTML = '<p class="muted">Recalculating summaries and dashboard…</p>';
+      var aggregates = computeAggregates(allTxns);
+
+      body.innerHTML = '<p class="muted">Writing to the database…</p>';
+      return deleteDocsBatched('sales', toDeleteIds).then(function () {
+        return writeDocsBatched('sales', newTxns.reduce(function (o, t) { o[t.docId] = t; return o; }, {}));
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummaryMonth', aggregates.summaryMonth);
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummaryClient', aggregates.summaryClient);
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummarySku', aggregates.summarySku);
+      }).then(function () {
+        return db.collection('salesDashboard').doc('summary').set(aggregates.dashboard);
+      }).then(function () {
+        dashboardCache = aggregates.dashboard;
+        salesReportClientsCache = null;
+        var matchSummary = 'Exact month: ' + (matchCounts.exact_month || 0) + ', nearest available month: ' + (matchCounts.nearest_month || 0) +
+          ', flat current cost: ' + (matchCounts.flat_current || 0) + ', no cost found: ' + ((matchCounts.unmatched || 0) + (matchCounts.no_sku_match || 0));
+        var monthLabels = Array.from(new Set(newTxns.map(function (t) { return t.monthLabel; })));
+        body.innerHTML = '<p><strong>Done.</strong> Imported ' + newTxns.length.toLocaleString() + ' row(s) for ' + monthLabels.map(escapeHtml).join(', ') + '.</p>' +
+          '<p class="dash-note">Cost matching — ' + matchSummary + '.</p>' +
+          '<p class="dash-note">The Dashboard and Sales report have been refreshed with the new totals.</p>';
+        logActivity('sales-upload', monthLabels.join(', '));
+        if (currentView === 'dashboard') renderDashboard();
+      });
+    }).catch(function (err) {
+      body.innerHTML = '<p class="muted">Import failed. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+
+  document.getElementById('uploadSalesCloseBtn').addEventListener('click', function () {
+    document.getElementById('uploadSalesBackdrop').hidden = true;
+    document.getElementById('uploadSalesBody').innerHTML = '';
+    document.getElementById('uploadSalesFile').value = '';
+  });
+  document.getElementById('uploadSalesBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('uploadSalesBackdrop')) document.getElementById('uploadSalesCloseBtn').click();
+  });
+  document.getElementById('uploadSalesFile').addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (file) handleUploadFile(file);
   });
 
   // --- Modal ---
