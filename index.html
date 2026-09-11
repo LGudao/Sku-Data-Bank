@@ -276,6 +276,19 @@
   .history-grid thead th:first-child { text-align: left; left: 0; z-index: 2; }
   .history-grid td:first-child { position: sticky; left: 0; background: var(--surface); font-weight: 600; }
   .history-grid td.right, .history-grid th.right { text-align: right; }
+
+  .stat-display { cursor: default; }
+  .stat-display:hover { border-color: var(--border); }
+  .sales-grid { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .sales-grid th, .sales-grid td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .sales-grid thead th { position: sticky; top: 0; background: var(--surface-alt); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-muted); text-align: right; }
+  .sales-grid thead th:first-child { text-align: left; }
+  .sales-grid td:first-child { text-align: left; font-weight: 600; }
+  .sales-grid td.right, .sales-grid th.right { text-align: right; }
+  .sales-grid tbody tr.sales-row { cursor: pointer; }
+  .sales-grid tbody tr.sales-row:hover td { background: var(--accent-soft); }
+  .sales-grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 46vh; overflow-y: auto; }
+  .gp-neg { color: var(--danger); }
   .hist-cell { cursor: pointer; }
   .hist-cell:hover, .hist-cell:focus { background: var(--accent-soft); outline: none; }
   .hist-cost-tag { font-size: 9.5px; text-transform: uppercase; color: var(--ink-faint); margin-left: 4px; }
@@ -317,6 +330,7 @@
       <option value="">All categories</option>
     </select>
     <button class="btn-ghost" id="reportBtn" type="button">Price history report</button>
+    <button class="btn-ghost" id="salesBtn" type="button" hidden>Sales &amp; profit</button>
     <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in log</button>
     <button class="btn-primary" id="addBtn" type="button">+ Add SKU</button>
   </div>
@@ -395,6 +409,37 @@
     <div id="reportBody"><p class="muted">Choose a client above to see their 12-month price history.</p></div>
     <div class="modal-actions" style="justify-content:flex-end;">
       <button type="button" class="btn-ghost" id="reportCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="salesBackdrop" hidden>
+  <div class="modal report-modal">
+    <h2>Sales &amp; profit</h2>
+    <p class="sub">Jan&ndash;Jul 2026 actual sales matched against approved unit cost from the SKU Data Bank. Group the totals below, then click a row to see the underlying transactions. Visible to admin and co-admin only.</p>
+    <div class="stats" id="salesStats"></div>
+    <div class="report-controls">
+      <div class="field">
+        <label for="salesGroupSelect">Group by</label>
+        <select id="salesGroupSelect">
+          <option value="month">Month</option>
+          <option value="client">Client</option>
+          <option value="sku">SKU</option>
+        </select>
+      </div>
+    </div>
+    <div id="salesSummaryWrap">
+      <div id="salesSummaryBody"><p class="muted">Loading…</p></div>
+    </div>
+    <div id="salesDrillWrap" hidden>
+      <div class="modal-actions" style="justify-content:flex-start; margin: 0 0 10px;">
+        <button type="button" class="btn-ghost" id="salesDrillBackBtn">&larr; Back to summary</button>
+      </div>
+      <div id="salesDrillTitle" style="font-weight:600; margin-bottom:8px; font-size:14px;"></div>
+      <div id="salesDrillBody"></div>
+    </div>
+    <div class="modal-actions" style="justify-content:flex-end;">
+      <button type="button" class="btn-ghost" id="salesCloseBtn">Close</button>
     </div>
   </div>
 </div>
@@ -496,7 +541,9 @@
   var bannerDismissed = false;
 
   var ADMIN_PASSCODE = 'FGS-SKU-2026';
+  var CO_ADMIN_PASSCODE = 'FGS-SKU-COADMIN26';
   var USER_PASSCODE = 'FGS-SKU-TEAM26';
+  function isAdminLike(r) { return r === 'admin' || r === 'coadmin'; }
   var LS_NAME = 'skuDataBank_displayName';
   var LS_GATE = 'skuDataBank_gateOk';
   var LS_ROLE = 'skuDataBank_role';
@@ -785,7 +832,7 @@
     var el = document.getElementById('signedInInfo');
     if (!el) return;
     if (displayName) {
-      var roleTag = role === 'admin' ? ' <span class="view-only-note" style="color:var(--accent);background:var(--accent-soft);">admin</span>' : '';
+      var roleTag = isAdminLike(role) ? ' <span class="view-only-note" style="color:var(--accent);background:var(--accent-soft);">' + escapeHtml(role) + '</span>' : '';
       el.innerHTML = 'Signed in as <strong>' + escapeHtml(displayName) + '</strong>' + roleTag +
         ' · <button type="button" id="changeNameBtn">change</button>' +
         ' · <button type="button" id="logOutBtn">log out</button>';
@@ -802,7 +849,9 @@
       el.textContent = '';
     }
     var logBtn = document.getElementById('viewLogBtn');
-    if (logBtn) logBtn.hidden = role !== 'admin';
+    if (logBtn) logBtn.hidden = !isAdminLike(role);
+    var salesBtnEl = document.getElementById('salesBtn');
+    if (salesBtnEl) salesBtnEl.hidden = !isAdminLike(role);
   }
 
   function logOut() {
@@ -874,7 +923,7 @@
     var pass = document.getElementById('g_passcode').value;
     var name = document.getElementById('g_name').value.trim();
     var err = document.getElementById('gateError');
-    var enteredRole = pass === ADMIN_PASSCODE ? 'admin' : (pass === USER_PASSCODE ? 'user' : null);
+    var enteredRole = pass === ADMIN_PASSCODE ? 'admin' : (pass === CO_ADMIN_PASSCODE ? 'coadmin' : (pass === USER_PASSCODE ? 'user' : null));
     if (!enteredRole) {
       err.textContent = 'Incorrect passcode — check with the database owner.';
       return;
@@ -908,6 +957,170 @@
   document.getElementById('reportClientSelect').addEventListener('change', function (e) {
     renderClientReport(e.target.value);
   });
+
+  // --- Sales & profit dashboard ---
+  var SALES_MONTH_ORDER = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07'];
+  var salesSummaryCache = null; // { month: {...}, client: {...}, sku: {...} }
+  var salesGroupBy = 'month';
+  var salesGroupField = { month: 'monthKey', client: 'client', sku: 'sku' };
+
+  function fmtPeso(v) {
+    if (v === null || v === undefined || isNaN(v)) return '<span class="empty-val">—</span>';
+    var neg = v < 0;
+    var s = '₱' + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return neg ? '<span class="gp-neg">(' + s + ')</span>' : s;
+  }
+  function fmtPct(v) {
+    if (v === null || v === undefined || isNaN(v)) return '<span class="empty-val">—</span>';
+    var s = (v * 100).toFixed(1) + '%';
+    return v < 0 ? '<span class="gp-neg">(' + s + ')</span>' : s;
+  }
+
+  function openSalesModal() {
+    document.getElementById('salesBackdrop').hidden = false;
+    document.getElementById('salesDrillWrap').hidden = true;
+    document.getElementById('salesSummaryWrap').hidden = false;
+    if (salesSummaryCache) {
+      renderSalesStats();
+      renderSalesSummaryTable();
+      return;
+    }
+    document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Loading…</p>';
+    if (!db) { document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Live database is not connected.</p>'; return; }
+    Promise.all([
+      db.collection('salesSummaryMonth').get(),
+      db.collection('salesSummaryClient').get(),
+      db.collection('salesSummarySku').get(),
+    ]).then(function (snaps) {
+      var toObj = function (snap) {
+        var o = {};
+        snap.docs.forEach(function (d) { o[d.id] = d.data(); });
+        return o;
+      };
+      salesSummaryCache = { month: toObj(snaps[0]), client: toObj(snaps[1]), sku: toObj(snaps[2]) };
+      renderSalesStats();
+      renderSalesSummaryTable();
+    }).catch(function (err) {
+      document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Could not load sales data. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+  function closeSalesModal() { document.getElementById('salesBackdrop').hidden = true; }
+
+  function renderSalesStats() {
+    var months = salesSummaryCache.month;
+    var totalSales = 0, totalGP = 0, totalTxns = 0, totalUnmatched = 0;
+    Object.keys(months).forEach(function (k) {
+      var m = months[k];
+      totalSales += m.sales || 0;
+      totalGP += m.grossProfit || 0;
+      totalTxns += m.txnCount || 0;
+      totalUnmatched += m.unmatchedCount || 0;
+    });
+    var rate = totalSales ? totalGP / totalSales : 0;
+    var tiles = [
+      { n: fmtPeso(totalSales), l: 'Total Sales (Jan–Jul)' },
+      { n: fmtPeso(totalGP), l: 'Total Gross Profit' },
+      { n: fmtPct(rate), l: 'Blended GP Rate' },
+      { n: totalTxns.toLocaleString(), l: 'Transactions' },
+      { n: totalUnmatched.toLocaleString(), l: 'No cost match' },
+    ];
+    document.getElementById('salesStats').innerHTML = tiles.map(function (t) {
+      return '<div class="stat stat-display"><span class="n">' + t.n + '</span><span class="l">' + t.l + '</span></div>';
+    }).join('');
+  }
+
+  function renderSalesSummaryTable() {
+    var groupBy = salesGroupBy;
+    var data = salesSummaryCache[groupBy];
+    var keys = Object.keys(data);
+    if (groupBy === 'month') {
+      keys.sort(function (a, b) { return SALES_MONTH_ORDER.indexOf(a) - SALES_MONTH_ORDER.indexOf(b); });
+    } else {
+      keys.sort(function (a, b) { return (data[b].sales || 0) - (data[a].sales || 0); });
+    }
+    var colLabel = groupBy === 'month' ? 'Month' : (groupBy === 'client' ? 'Client' : 'SKU');
+    var rows = keys.map(function (k) {
+      var d = data[k];
+      var label = d.label || k;
+      var sub = groupBy === 'sku' && d.description ? '<div class="muted">' + escapeHtml(d.description) + '</div>' : '';
+      return '<tr class="sales-row" data-key="' + escapeHtml(k) + '">' +
+        '<td>' + escapeHtml(label) + sub + '</td>' +
+        '<td class="right">' + fmtPeso(d.sales) + '</td>' +
+        '<td class="right">' + fmtPeso(d.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(d.grossProfitRate) + '</td>' +
+        '<td class="right">' + (d.txnCount || 0).toLocaleString() + '</td>' +
+        '<td class="right">' + (d.unmatchedCount ? d.unmatchedCount.toLocaleString() : '<span class="empty-val">0</span>') + '</td>' +
+        '</tr>';
+    }).join('');
+    document.getElementById('salesSummaryBody').innerHTML =
+      '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+      '<th>' + colLabel + '</th><th class="right">Sales</th><th class="right">Gross Profit</th>' +
+      '<th class="right">GP Rate</th><th class="right">Txns</th><th class="right">No cost match</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<p class="hint">Click a row to see its underlying transactions.</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('#salesSummaryBody .sales-row'), function (tr) {
+      tr.addEventListener('click', function () {
+        var key = tr.getAttribute('data-key');
+        var d = data[key];
+        openSalesDrill(groupBy, key, d.label || key);
+      });
+    });
+  }
+
+  function openSalesDrill(groupBy, key, label) {
+    if (!db) return;
+    document.getElementById('salesDrillTitle').textContent = label + ' — transactions';
+    document.getElementById('salesDrillBody').innerHTML = '<p class="muted">Loading…</p>';
+    document.getElementById('salesSummaryWrap').hidden = true;
+    document.getElementById('salesDrillWrap').hidden = false;
+    var field = salesGroupField[groupBy];
+    db.collection('sales').where(field, '==', key).get().then(function (snap) {
+      var rows = snap.docs.map(function (d) { return d.data(); });
+      rows.sort(function (a, b) {
+        if (a.monthKey !== b.monthKey) return a.monthKey < b.monthKey ? -1 : 1;
+        return (a.sku || '').localeCompare(b.sku || '');
+      });
+      if (!rows.length) {
+        document.getElementById('salesDrillBody').innerHTML = '<p class="muted">No transactions found.</p>';
+        return;
+      }
+      var body = rows.map(function (t) {
+        var noteTag = t.matched ? '' : '<div class="muted">' + escapeHtml(t.note || 'No cost match') + '</div>';
+        return '<tr>' +
+          '<td>' + escapeHtml(t.monthLabel || t.monthKey) + '</td>' +
+          '<td>' + escapeHtml(t.sku) + '<div class="muted">' + escapeHtml(t.description || '') + '</div></td>' +
+          '<td>' + escapeHtml(t.client || '') + '</td>' +
+          '<td class="right">' + (t.quantity != null ? t.quantity.toLocaleString() : '—') + '</td>' +
+          '<td class="right">' + fmtPeso(t.sales) + '</td>' +
+          '<td class="right">' + (t.unitCost != null ? t.unitCost.toFixed(4) : '<span class="empty-val">—</span>') + '</td>' +
+          '<td class="right">' + fmtPeso(t.grossProfit) + '</td>' +
+          '<td class="right">' + fmtPct(t.grossProfitRate) + noteTag + '</td>' +
+          '</tr>';
+      }).join('');
+      document.getElementById('salesDrillBody').innerHTML =
+        '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+        '<th>Month</th><th>SKU</th><th>Client</th><th class="right">Qty</th><th class="right">Sales</th>' +
+        '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+        '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    }).catch(function (err) {
+      document.getElementById('salesDrillBody').innerHTML = '<p class="muted">Could not load transactions. ' + (err && err.message ? err.message : '') + '</p>';
+    });
+  }
+  function backToSalesSummary() {
+    document.getElementById('salesDrillWrap').hidden = true;
+    document.getElementById('salesSummaryWrap').hidden = false;
+  }
+
+  document.getElementById('salesBtn').addEventListener('click', openSalesModal);
+  document.getElementById('salesCloseBtn').addEventListener('click', closeSalesModal);
+  document.getElementById('salesBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('salesBackdrop')) closeSalesModal();
+  });
+  document.getElementById('salesGroupSelect').addEventListener('change', function (e) {
+    salesGroupBy = e.target.value;
+    if (salesSummaryCache) renderSalesSummaryTable();
+  });
+  document.getElementById('salesDrillBackBtn').addEventListener('click', backToSalesSummary);
 
   // --- Modal ---
   function openModal(docId) {
