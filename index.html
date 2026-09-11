@@ -211,6 +211,7 @@
   tbody tr:hover td { background: var(--surface-alt); }
   tbody tr:last-child td { border-bottom: none; }
   .sku-cell .code { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; }
+  .code { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; }
   .desc-cell .d { max-width: 320px; }
   .muted { color: var(--ink-muted); font-size: 12px; }
   .right { text-align: right; }
@@ -296,6 +297,33 @@
   .hist-detail h3 { margin: 0 0 10px; font-size: 14px; }
   .hist-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .hist-detail-label { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-muted); margin-bottom: 2px; }
+
+  .view-tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 18px 0 20px; border-bottom: 1px solid var(--border); }
+  .view-tabs { display: flex; gap: 4px; }
+  .view-tab { padding: 10px 18px; border: 1px solid var(--border); border-bottom: none; border-radius: 10px 10px 0 0; background: transparent; color: var(--ink-muted); font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer; position: relative; top: 1px; }
+  .view-tab:hover { color: var(--ink); }
+  .view-tab.active { background: var(--surface); color: var(--ink); border-color: var(--border); border-bottom: 1px solid var(--surface); }
+  .view-tabs-row .btn-ghost { margin-bottom: 8px; }
+
+  .log-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-muted); margin: 22px 0 10px; }
+  .log-section-title:first-of-type { margin-top: 0; }
+
+  .dash-wrap { display: flex; flex-direction: column; gap: 22px; }
+  .dash-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .dash-head h2 { margin: 0; font-size: 21px; }
+  .dash-head p { margin: 4px 0 0; color: var(--ink-muted); font-size: 13px; }
+  .dash-section { border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; background: var(--surface); }
+  .dash-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dash-section-head h3 { margin: 0; font-size: 13.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-muted); }
+  .dash-section-head select { min-width: 180px; }
+  .dash-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .dash-bar-track { background: var(--surface-alt); border-radius: 4px; height: 5px; overflow: hidden; margin-top: 5px; min-width: 60px; }
+  .dash-bar-fill { height: 100%; background: var(--accent); }
+  .dash-note { font-size: 12px; color: var(--ink-muted); margin: -6px 0 14px; }
+  .dash-total-row td { font-weight: 700; background: var(--surface-alt); }
+  .rank-matrix-table td, .rank-matrix-table th { text-align: center !important; }
+  .rank-matrix-table td:first-child, .rank-matrix-table th:first-child { text-align: left !important; }
+  .rank-1 { color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -311,6 +339,19 @@
       <div class="signed-in" id="signedInInfo"></div>
     </div>
   </header>
+
+  <div class="view-tabs-row">
+    <div class="view-tabs" id="viewTabs">
+      <button class="view-tab" id="dashTabBtn" type="button" hidden>Dashboard</button>
+      <button class="view-tab" id="skusTabBtn" type="button">SKU Database</button>
+      <button class="view-tab" id="reportBtn" type="button">Price history report</button>
+    </div>
+    <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in &amp; activity log</button>
+  </div>
+
+  <div id="dashboardView" hidden></div>
+
+  <div id="skusView">
 
   <div class="stats" id="stats"></div>
 
@@ -329,9 +370,6 @@
     <select id="categoryFilter" aria-label="Filter by category">
       <option value="">All categories</option>
     </select>
-    <button class="btn-ghost" id="reportBtn" type="button">Price history report</button>
-    <button class="btn-ghost" id="salesBtn" type="button" hidden>Sales &amp; profit</button>
-    <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in log</button>
     <button class="btn-primary" id="addBtn" type="button">+ Add SKU</button>
   </div>
 
@@ -362,6 +400,8 @@
   </div>
 
   <footer class="note">Cost is VAT-in, selling price is VAT-ex, matching how the source price list recorded them. Margin compares selling price against the VAT-ex cost.</footer>
+
+  </div>
 </div>
 
 <div class="modal-backdrop" id="gateBackdrop">
@@ -386,10 +426,13 @@
 </div>
 
 <div class="modal-backdrop" id="logBackdrop" hidden>
-  <div class="modal">
-    <h2>Sign-in log</h2>
-    <p class="sub">Everyone who has entered a passcode, most recent first.</p>
+  <div class="modal report-modal">
+    <h2>Sign-in &amp; activity log</h2>
+    <p class="sub">Admin-only. Who has signed in, and every SKU added, edited or deleted, most recent first.</p>
+    <h3 class="log-section-title">Sign-ins</h3>
     <div id="logBody"></div>
+    <h3 class="log-section-title">Recent activity</h3>
+    <div id="activityLogBody"></div>
     <div class="modal-actions" style="justify-content:flex-end;">
       <button type="button" class="btn-ghost" id="logCloseBtn">Close</button>
     </div>
@@ -413,33 +456,13 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="salesBackdrop" hidden>
+<div class="modal-backdrop" id="dashDrillBackdrop" hidden>
   <div class="modal report-modal">
-    <h2>Sales &amp; profit</h2>
-    <p class="sub">Jan&ndash;Jul 2026 actual sales matched against approved unit cost from the SKU Data Bank. Group the totals below, then click a row to see the underlying transactions. Visible to admin and co-admin only.</p>
-    <div class="stats" id="salesStats"></div>
-    <div class="report-controls">
-      <div class="field">
-        <label for="salesGroupSelect">Group by</label>
-        <select id="salesGroupSelect">
-          <option value="month">Month</option>
-          <option value="client">Client</option>
-          <option value="sku">SKU</option>
-        </select>
-      </div>
-    </div>
-    <div id="salesSummaryWrap">
-      <div id="salesSummaryBody"><p class="muted">Loading…</p></div>
-    </div>
-    <div id="salesDrillWrap" hidden>
-      <div class="modal-actions" style="justify-content:flex-start; margin: 0 0 10px;">
-        <button type="button" class="btn-ghost" id="salesDrillBackBtn">&larr; Back to summary</button>
-      </div>
-      <div id="salesDrillTitle" style="font-weight:600; margin-bottom:8px; font-size:14px;"></div>
-      <div id="salesDrillBody"></div>
-    </div>
+    <h2 id="dashDrillTitle">Transactions</h2>
+    <p class="sub">Underlying Jan&ndash;Jul 2026 transactions for this row.</p>
+    <div id="dashDrillBody"><p class="muted">Loading…</p></div>
     <div class="modal-actions" style="justify-content:flex-end;">
-      <button type="button" class="btn-ghost" id="salesCloseBtn">Close</button>
+      <button type="button" class="btn-ghost" id="dashDrillCloseBtn">Close</button>
     </div>
   </div>
 </div>
@@ -539,6 +562,7 @@
   var filters = { search: '', status: '', category: '', only: null };
   var editingDocId = null;
   var bannerDismissed = false;
+  var currentView = 'skus';
 
   var ADMIN_PASSCODE = 'FGS-SKU-2026';
   var CO_ADMIN_PASSCODE = 'FGS-SKU-COADMIN26';
@@ -849,9 +873,19 @@
       el.textContent = '';
     }
     var logBtn = document.getElementById('viewLogBtn');
-    if (logBtn) logBtn.hidden = !isAdminLike(role);
-    var salesBtnEl = document.getElementById('salesBtn');
-    if (salesBtnEl) salesBtnEl.hidden = !isAdminLike(role);
+    if (logBtn) logBtn.hidden = role !== 'admin';
+    var dashTabBtnEl = document.getElementById('dashTabBtn');
+    if (dashTabBtnEl) dashTabBtnEl.hidden = role !== 'admin';
+    if (role !== 'admin' && currentView === 'dashboard') setActiveTab('skus');
+  }
+
+  function setActiveTab(view) {
+    currentView = view;
+    document.getElementById('dashTabBtn').classList.toggle('active', view === 'dashboard');
+    document.getElementById('skusTabBtn').classList.toggle('active', view === 'skus');
+    document.getElementById('dashboardView').hidden = view !== 'dashboard';
+    document.getElementById('skusView').hidden = view !== 'skus';
+    if (view === 'dashboard') loadDashboard();
   }
 
   function logOut() {
@@ -873,8 +907,10 @@
   function openLogModal() {
     document.getElementById('logBackdrop').hidden = false;
     var body = document.getElementById('logBody');
+    var actBody = document.getElementById('activityLogBody');
     body.innerHTML = '<p class="muted">Loading…</p>';
-    if (!db) { body.innerHTML = '<p class="muted">Live database is not connected.</p>'; return; }
+    actBody.innerHTML = '<p class="muted">Loading…</p>';
+    if (!db) { body.innerHTML = '<p class="muted">Live database is not connected.</p>'; actBody.innerHTML = ''; return; }
     db.collection('accessLog').orderBy('lastSignInAt', 'desc').limit(200).get().then(function (snap) {
       if (!snap.docs.length) { body.innerHTML = '<p class="muted">No sign-ins recorded yet.</p>'; return; }
       body.innerHTML = '<table style="width:100%;border-collapse:collapse;">' +
@@ -897,8 +933,45 @@
         : ('. ' + (err && err.message ? err.message : ''));
       body.innerHTML = '<p class="muted">Could not load the sign-in log' + note + '</p>';
     });
+    db.collection('activityLog').orderBy('at', 'desc').limit(200).get().then(function (snap) {
+      if (!snap.docs.length) { actBody.innerHTML = '<p class="muted">No activity recorded yet.</p>'; return; }
+      actBody.innerHTML = '<table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Name</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Role</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">Action</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">SKU</th>' +
+        '<th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--ink-muted);">When</th>' +
+        '</tr></thead><tbody>' +
+        snap.docs.map(function (d) {
+          var v = d.data();
+          var actionLabel = v.action === 'add' ? 'Added' : v.action === 'edit' ? 'Edited' : v.action === 'delete' ? 'Deleted' : (v.action || '—');
+          return '<tr>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(v.name || '—') + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(v.role || '—') + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(actionLabel) + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);">' + escapeHtml(v.sku || '—') + '</td>' +
+            '<td style="padding:6px 8px;border-top:1px solid var(--border);" class="muted">' + fmtDate(v.at) + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function (err) {
+      actBody.innerHTML = '<p class="muted">Could not load recent activity. ' + (err && err.message ? err.message : '') + '</p>';
+    });
   }
   function closeLogModal() { document.getElementById('logBackdrop').hidden = true; }
+
+  function logActivity(action, sku) {
+    if (!db) return;
+    try {
+      db.collection('activityLog').add({
+        name: displayName || 'Unknown',
+        role: role || null,
+        action: action,
+        sku: sku || '',
+        at: new Date().toISOString(),
+      }).catch(function () {});
+    } catch (e) {}
+  }
 
   function applyEditPermissions() {
     var addBtn = document.getElementById('addBtn');
@@ -916,7 +989,11 @@
     document.getElementById('gateBackdrop').hidden = true;
     document.getElementById('appWrap').hidden = false;
     updateSignedInUI();
+    setActiveTab(role === 'admin' ? 'dashboard' : 'skus');
   }
+
+  document.getElementById('dashTabBtn').addEventListener('click', function () { setActiveTab('dashboard'); });
+  document.getElementById('skusTabBtn').addEventListener('click', function () { setActiveTab('skus'); });
 
   document.getElementById('gateForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -958,11 +1035,11 @@
     renderClientReport(e.target.value);
   });
 
-  // --- Sales & profit dashboard ---
-  var SALES_MONTH_ORDER = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07'];
-  var salesSummaryCache = null; // { month: {...}, client: {...}, sku: {...} }
-  var salesGroupBy = 'month';
-  var salesGroupField = { month: 'monthKey', client: 'client', sku: 'sku' };
+  // --- Dashboard ---
+  var DASH_MONTH_ORDER = ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07'];
+  var MONTH_SHORT = { '2026-01': 'Jan', '2026-02': 'Feb', '2026-03': 'Mar', '2026-04': 'Apr', '2026-05': 'May', '2026-06': 'Jun', '2026-07': 'Jul' };
+  var dashboardCache = null; // the salesDashboard/summary doc
+  var dashAccountMonthFilter = 'all';
 
   function fmtPeso(v) {
     if (v === null || v === undefined || isNaN(v)) return '<span class="empty-val">—</span>';
@@ -975,105 +1052,231 @@
     var s = (v * 100).toFixed(1) + '%';
     return v < 0 ? '<span class="gp-neg">(' + s + ')</span>' : s;
   }
+  function fmtNum(v) {
+    if (v === null || v === undefined || isNaN(v)) return '<span class="empty-val">—</span>';
+    return v.toLocaleString();
+  }
+  function barCell(html, pct) {
+    var w = Math.max(0, Math.min(100, (pct || 0) * 100));
+    return '<div>' + html + '<div class="dash-bar-track"><div class="dash-bar-fill" style="width:' + w.toFixed(1) + '%"></div></div></div>';
+  }
 
-  function openSalesModal() {
-    document.getElementById('salesBackdrop').hidden = false;
-    document.getElementById('salesDrillWrap').hidden = true;
-    document.getElementById('salesSummaryWrap').hidden = false;
-    if (salesSummaryCache) {
-      renderSalesStats();
-      renderSalesSummaryTable();
-      return;
-    }
-    document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Loading…</p>';
-    if (!db) { document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Live database is not connected.</p>'; return; }
-    Promise.all([
-      db.collection('salesSummaryMonth').get(),
-      db.collection('salesSummaryClient').get(),
-      db.collection('salesSummarySku').get(),
-    ]).then(function (snaps) {
-      var toObj = function (snap) {
-        var o = {};
-        snap.docs.forEach(function (d) { o[d.id] = d.data(); });
-        return o;
-      };
-      salesSummaryCache = { month: toObj(snaps[0]), client: toObj(snaps[1]), sku: toObj(snaps[2]) };
-      renderSalesStats();
-      renderSalesSummaryTable();
+  function loadDashboard() {
+    var wrap = document.getElementById('dashboardView');
+    if (dashboardCache) { renderDashboard(); return; }
+    wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Loading dashboard…</p>';
+    if (!db) { wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Live database is not connected.</p>'; return; }
+    db.collection('salesDashboard').doc('summary').get().then(function (doc) {
+      if (!doc.exists) { wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">No dashboard data has been imported yet.</p>'; return; }
+      dashboardCache = doc.data();
+      renderDashboard();
     }).catch(function (err) {
-      document.getElementById('salesSummaryBody').innerHTML = '<p class="muted">Could not load sales data. ' + (err && err.message ? err.message : '') + '</p>';
+      wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Could not load the dashboard. ' + (err && err.message ? err.message : '') + '</p>';
     });
   }
-  function closeSalesModal() { document.getElementById('salesBackdrop').hidden = true; }
 
-  function renderSalesStats() {
-    var months = salesSummaryCache.month;
-    var totalSales = 0, totalGP = 0, totalTxns = 0, totalUnmatched = 0;
-    Object.keys(months).forEach(function (k) {
-      var m = months[k];
-      totalSales += m.sales || 0;
-      totalGP += m.grossProfit || 0;
-      totalTxns += m.txnCount || 0;
-      totalUnmatched += m.unmatchedCount || 0;
-    });
-    var rate = totalSales ? totalGP / totalSales : 0;
-    var tiles = [
-      { n: fmtPeso(totalSales), l: 'Total Sales (Jan–Jul)' },
-      { n: fmtPeso(totalGP), l: 'Total Gross Profit' },
-      { n: fmtPct(rate), l: 'Blended GP Rate' },
-      { n: totalTxns.toLocaleString(), l: 'Transactions' },
-      { n: totalUnmatched.toLocaleString(), l: 'No cost match' },
-    ];
-    document.getElementById('salesStats').innerHTML = tiles.map(function (t) {
-      return '<div class="stat stat-display"><span class="n">' + t.n + '</span><span class="l">' + t.l + '</span></div>';
-    }).join('');
-  }
-
-  function renderSalesSummaryTable() {
-    var groupBy = salesGroupBy;
-    var data = salesSummaryCache[groupBy];
-    var keys = Object.keys(data);
-    if (groupBy === 'month') {
-      keys.sort(function (a, b) { return SALES_MONTH_ORDER.indexOf(a) - SALES_MONTH_ORDER.indexOf(b); });
-    } else {
-      keys.sort(function (a, b) { return (data[b].sales || 0) - (data[a].sales || 0); });
-    }
-    var colLabel = groupBy === 'month' ? 'Month' : (groupBy === 'client' ? 'Client' : 'SKU');
-    var rows = keys.map(function (k) {
-      var d = data[k];
-      var label = d.label || k;
-      var sub = groupBy === 'sku' && d.description ? '<div class="muted">' + escapeHtml(d.description) + '</div>' : '';
-      return '<tr class="sales-row" data-key="' + escapeHtml(k) + '">' +
-        '<td>' + escapeHtml(label) + sub + '</td>' +
-        '<td class="right">' + fmtPeso(d.sales) + '</td>' +
-        '<td class="right">' + fmtPeso(d.grossProfit) + '</td>' +
-        '<td class="right">' + fmtPct(d.grossProfitRate) + '</td>' +
-        '<td class="right">' + (d.txnCount || 0).toLocaleString() + '</td>' +
-        '<td class="right">' + (d.unmatchedCount ? d.unmatchedCount.toLocaleString() : '<span class="empty-val">0</span>') + '</td>' +
+  function accountsTableHtml(filterValue) {
+    var d = dashboardCache;
+    var isAll = filterValue === 'all';
+    var rows = isAll ? d.accounts : (d.accountsByMonth[filterValue] || []);
+    var body = rows.map(function (a) {
+      return '<tr class="sales-row" data-field="accounts" data-key="' + escapeHtml(a.account) + '" data-label="' + escapeHtml(a.account) + '">' +
+        '<td>' + a.rank + '</td>' +
+        '<td>' + escapeHtml(a.account) + '</td>' +
+        '<td class="right">' + fmtPeso(a.sales) + '</td>' +
+        '<td class="right">' + fmtPct(a.pctOfPeriodSales) + '</td>' +
+        '<td class="right">' + fmtPeso(a.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(a.grossProfitRate) + '</td>' +
+        '<td class="right">' + fmtNum(a.skuCount) + '</td>' +
         '</tr>';
     }).join('');
-    document.getElementById('salesSummaryBody').innerHTML =
-      '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
-      '<th>' + colLabel + '</th><th class="right">Sales</th><th class="right">Gross Profit</th>' +
-      '<th class="right">GP Rate</th><th class="right">Txns</th><th class="right">No cost match</th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-      '<p class="hint">Click a row to see its underlying transactions.</p>';
-    Array.prototype.forEach.call(document.querySelectorAll('#salesSummaryBody .sales-row'), function (tr) {
-      tr.addEventListener('click', function () {
-        var key = tr.getAttribute('data-key');
-        var d = data[key];
-        openSalesDrill(groupBy, key, d.label || key);
-      });
-    });
+    var totalSales = rows.reduce(function (s, a) { return s + (a.sales || 0); }, 0);
+    var totalGp = rows.reduce(function (s, a) { return s + (a.grossProfit || 0); }, 0);
+    body += '<tr class="dash-total-row"><td colspan="2">Total</td><td class="right">' + fmtPeso(totalSales) + '</td><td class="right">100.0%</td>' +
+      '<td class="right">' + fmtPeso(totalGp) + '</td><td class="right">' + fmtPct(totalSales ? totalGp / totalSales : 0) + '</td><td class="right">' + (isAll ? fmtNum(d.accountsTotal.skuCount) : '—') + '</td></tr>';
+    return '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+      '<th>Rank</th><th>Account</th><th class="right">Sales</th><th class="right">% of Period Sales</th>' +
+      '<th class="right">Gross Profit</th><th class="right">GP Rate</th><th class="right">SKUs Handled</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function renderAccountsSection() {
+    document.getElementById('dashAccountsTableWrap').innerHTML = accountsTableHtml(dashAccountMonthFilter);
   }
 
-  function openSalesDrill(groupBy, key, label) {
+  function monthMatrixTable(rowLabels, dataMap, monthTotals, isPercent, firstColLabel) {
+    var head = '<th>' + escapeHtml(firstColLabel) + '</th>' + DASH_MONTH_ORDER.map(function (mk) { return '<th class="right">' + MONTH_SHORT[mk] + '</th>'; }).join('');
+    var rows = rowLabels.map(function (label) {
+      var vals = DASH_MONTH_ORDER.map(function (mk) {
+        var v = (dataMap[label] || {})[mk];
+        return '<td class="right">' + (isPercent ? fmtPct(v) : fmtPeso(v)) + '</td>';
+      }).join('');
+      return '<tr><td>' + escapeHtml(label) + '</td>' + vals + '</tr>';
+    }).join('');
+    var totalRow = '';
+    if (monthTotals) {
+      var totalCells = DASH_MONTH_ORDER.map(function (mk) { return '<td class="right">' + fmtPeso(monthTotals[mk]) + '</td>'; }).join('');
+      totalRow = '<tr class="dash-total-row"><td>Total</td>' + totalCells + '</tr>';
+    }
+    return '<div class="sales-grid-wrap"><table class="sales-grid">' +
+      '<thead><tr>' + head + '</tr></thead><tbody>' + rows + totalRow + '</tbody></table></div>';
+  }
+
+  function renderDashboard() {
+    var d = dashboardCache;
+    var km = d.keyMetrics;
+    var wrap = document.getElementById('dashboardView');
+
+    var metricTiles = [
+      { n: fmtPeso(km.totalSales), l: 'Total Sales (Jan–Jul)' },
+      { n: fmtPeso(km.totalGrossProfit), l: 'Total Gross Profit' },
+      { n: fmtPct(km.blendedGpRate), l: 'Blended GP Rate' },
+      { n: fmtPeso(km.averageMonthlySales), l: 'Average Monthly Sales' },
+      { n: escapeHtml(km.bestMonthBySales), l: 'Best Month by Sales' },
+      { n: escapeHtml(km.weakestMonthBySales), l: 'Weakest Month by Sales' },
+      { n: escapeHtml(km.bestMonthByGpRate), l: 'Best Month by GP Rate' },
+      { n: fmtNum(km.activeSkus), l: 'Active SKUs' },
+      { n: fmtNum(km.productStructures), l: 'Product Structures' },
+      { n: fmtNum(km.salesAccounts), l: 'Sales Executives / Accounts' },
+      { n: fmtPct(km.top10SkuPct), l: 'Top 10 SKUs as % of Sales' },
+      { n: escapeHtml(km.topStructure) + ' <span class="muted" style="font-weight:400;font-size:11px;">(' + (km.topStructurePct * 100).toFixed(1) + '%)</span>', l: 'Top Structure' },
+    ];
+    var metricsHtml = metricTiles.map(function (t) {
+      return '<div class="stat stat-display"><span class="n">' + t.n + '</span><span class="l">' + t.l + '</span></div>';
+    }).join('');
+
+    var monthRows = d.months.map(function (m) {
+      return '<tr class="sales-row" data-field="monthKey" data-key="' + escapeHtml(m.key) + '" data-label="' + escapeHtml(m.label) + '">' +
+        '<td>' + escapeHtml(m.label) + '</td>' +
+        '<td class="right">' + fmtPeso(m.sales) + '</td>' +
+        '<td class="right">' + fmtPeso(m.cost) + '</td>' +
+        '<td class="right">' + fmtPeso(m.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(m.grossProfitRate) + '</td>' +
+        '<td class="right">' + fmtPct(m.pctOfTotalSales) + '</td>' +
+        '<td class="right">' + (m.momGrowth == null ? '<span class="empty-val">—</span>' : fmtPct(m.momGrowth)) + '</td>' +
+        '</tr>';
+    }).join('');
+    var mt = d.monthsTotal;
+    monthRows += '<tr class="dash-total-row"><td>Total</td><td class="right">' + fmtPeso(mt.sales) + '</td><td class="right">' + fmtPeso(mt.cost) + '</td>' +
+      '<td class="right">' + fmtPeso(mt.grossProfit) + '</td><td class="right">' + fmtPct(mt.grossProfitRate) + '</td><td class="right">100.0%</td><td class="right">—</td></tr>';
+
+    var top10Rows = d.top10Skus.map(function (s) {
+      return '<tr class="sales-row" data-field="sku" data-key="' + escapeHtml(s.sku) + '" data-label="' + escapeHtml(s.sku) + '">' +
+        '<td>' + s.rank + '</td>' +
+        '<td><div class="code">' + escapeHtml(s.sku) + '</div><div class="muted">' + escapeHtml(s.description || '') + '</div></td>' +
+        '<td>' + escapeHtml(s.structure || '—') + '</td>' +
+        '<td class="right">' + fmtPeso(s.sales) + '</td>' +
+        '<td class="right">' + fmtPct(s.pctOfTotalSales) + '</td>' +
+        '<td class="right">' + fmtPeso(s.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(s.grossProfitRate) + '</td>' +
+        '</tr>';
+    }).join('');
+    var t10t = d.top10Total;
+    top10Rows += '<tr class="dash-total-row"><td colspan="2">Top 10 Total</td><td></td><td class="right">' + fmtPeso(t10t.sales) + '</td>' +
+      '<td class="right">' + fmtPct(t10t.pctOfTotalSales) + '</td><td class="right">' + fmtPeso(t10t.grossProfit) + '</td><td class="right">' + fmtPct(t10t.grossProfitRate) + '</td></tr>';
+
+    var structRows = d.structures.map(function (s) {
+      return '<tr class="sales-row" data-field="structure" data-key="' + escapeHtml(s.structure) + '" data-label="' + escapeHtml(s.structure) + '">' +
+        '<td>' + s.rank + '</td>' +
+        '<td>' + escapeHtml(s.structure) + '</td>' +
+        '<td class="right">' + fmtPeso(s.sales) + '</td>' +
+        '<td class="right">' + fmtPct(s.pctOfTotalSales) + '</td>' +
+        '<td class="right">' + fmtPeso(s.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(s.grossProfitRate) + '</td>' +
+        '</tr>';
+    }).join('');
+    var st = d.structuresTotal;
+    structRows += '<tr class="dash-total-row"><td colspan="2">Total</td><td class="right">' + fmtPeso(st.sales) + '</td><td class="right">100.0%</td>' +
+      '<td class="right">' + fmtPeso(st.grossProfit) + '</td><td class="right">' + fmtPct(st.grossProfitRate) + '</td></tr>';
+
+    var acctMonthOptions = '<option value="all">All Months</option>' + DASH_MONTH_ORDER.map(function (mk) {
+      var m = d.months.filter(function (x) { return x.key === mk; })[0];
+      return '<option value="' + mk + '">' + escapeHtml(m ? m.label : mk) + '</option>';
+    }).join('');
+
+    var rankMatrixHead = '<th>Account</th>' + DASH_MONTH_ORDER.map(function (mk) { return '<th>' + MONTH_SHORT[mk] + '</th>'; }).join('');
+    var rankMatrixRows = d.accounts.map(function (a) {
+      var cells = DASH_MONTH_ORDER.map(function (mk) {
+        var rk = (d.accountRankMatrix[a.account] || {})[mk];
+        var cls = rk === 1 ? ' class="rank-1"' : '';
+        return '<td' + cls + '>' + (rk != null ? rk : '—') + '</td>';
+      }).join('');
+      return '<tr><td>' + escapeHtml(a.account) + '</td>' + cells + '</tr>';
+    }).join('');
+    var rankMatrixHtml = '<div class="sales-grid-wrap"><table class="sales-grid rank-matrix-table"><thead><tr>' + rankMatrixHead + '</tr></thead><tbody>' + rankMatrixRows + '</tbody></table></div>';
+
+    var icRows = d.itemClasses.map(function (ic) {
+      return '<tr class="sales-row" data-field="itemClass" data-key="' + escapeHtml(ic.itemClass) + '" data-label="' + escapeHtml(ic.itemClass) + '">' +
+        '<td>' + ic.rank + '</td>' +
+        '<td>' + escapeHtml(ic.itemClass) + '</td>' +
+        '<td class="right">' + fmtPeso(ic.sales) + '</td>' +
+        '<td class="right">' + fmtPct(ic.pctOfTotalSales) + '</td>' +
+        '<td class="right">' + fmtPeso(ic.grossProfit) + '</td>' +
+        '<td class="right">' + fmtPct(ic.grossProfitRate) + '</td>' +
+        '</tr>';
+    }).join('');
+    var ict = d.itemClassesTotal;
+    icRows += '<tr class="dash-total-row"><td colspan="2">Total</td><td class="right">' + fmtPeso(ict.sales) + '</td><td class="right">100.0%</td>' +
+      '<td class="right">' + fmtPeso(ict.grossProfit) + '</td><td class="right">' + fmtPct(ict.grossProfitRate) + '</td></tr>';
+
+    var icLabels = d.itemClasses.map(function (ic) { return ic.itemClass; });
+    var icByMonthHtml = monthMatrixTable(icLabels, d.itemClassByMonth, d.itemClassMonthTotals, false, 'Item Class');
+    var icGpRateByMonthHtml = monthMatrixTable(icLabels, d.itemClassGpRateByMonth, null, true, 'Item Class');
+
+    wrap.innerHTML =
+      '<div class="dash-wrap">' +
+        '<div class="dash-head"><h2>Sales Dashboard</h2><p>' + escapeHtml(d.meta.periodLabel) + ' · Sales are VAT-exclusive; Gross Profit = Sales less Final Unit Cost.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>Key Metrics</h3></div><div class="dash-metrics">' + metricsHtml + '</div></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>1. Sales Executive Summary</h3></div>' +
+        '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+        '<th>Month</th><th class="right">Sales</th><th class="right">Cost</th><th class="right">Gross Profit</th>' +
+        '<th class="right">GP Rate</th><th class="right">% of Total Sales</th><th class="right">MoM Growth</th>' +
+        '</tr></thead><tbody>' + monthRows + '</tbody></table></div>' +
+        '<p class="hint">Click a month to see its underlying transactions.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>2. Top 10 SKUs by Sales</h3></div>' +
+        '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+        '<th>Rank</th><th>SKU</th><th>Structure</th><th class="right">Sales</th><th class="right">% of Total Sales</th>' +
+        '<th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+        '</tr></thead><tbody>' + top10Rows + '</tbody></table></div>' +
+        '<p class="hint">Click a SKU to see its underlying transactions.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>3. Ranking by Product Structure</h3></div>' +
+        '<div class="sales-grid-wrap" style="max-height:60vh;"><table class="sales-grid"><thead><tr>' +
+        '<th>Rank</th><th>Structure</th><th class="right">Sales</th><th class="right">% of Total Sales</th>' +
+        '<th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+        '</tr></thead><tbody>' + structRows + '</tbody></table></div>' +
+        '<p class="hint">Click a structure to see its underlying transactions.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>4. Account Ranking by Sales</h3>' +
+        '<select id="dashAcctMonthSelect">' + acctMonthOptions + '</select></div>' +
+        '<div id="dashAccountsTableWrap"></div>' +
+        '<p class="hint">Click an account to see its underlying transactions.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>4b. Account Rank by Month</h3></div>' +
+        '<p class="dash-note">1 = highest sales that month.</p>' + rankMatrixHtml + '</div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>5. Sales by Item Class</h3></div>' +
+        '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
+        '<th>Rank</th><th>Item Class</th><th class="right">Sales</th><th class="right">% of Total Sales</th>' +
+        '<th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+        '</tr></thead><tbody>' + icRows + '</tbody></table></div>' +
+        '<p class="hint">Click an item class to see its underlying transactions.</p></div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>5b. Sales by Item Class per Month</h3></div>' + icByMonthHtml + '</div>' +
+
+        '<div class="dash-section"><div class="dash-section-head"><h3>5c. GP Rate by Item Class per Month</h3></div>' + icGpRateByMonthHtml + '</div>' +
+      '</div>';
+
+    renderAccountsSection();
+  }
+
+  function openDashDrill(field, key, label) {
     if (!db) return;
-    document.getElementById('salesDrillTitle').textContent = label + ' — transactions';
-    document.getElementById('salesDrillBody').innerHTML = '<p class="muted">Loading…</p>';
-    document.getElementById('salesSummaryWrap').hidden = true;
-    document.getElementById('salesDrillWrap').hidden = false;
-    var field = salesGroupField[groupBy];
+    document.getElementById('dashDrillTitle').textContent = label + ' — transactions';
+    document.getElementById('dashDrillBody').innerHTML = '<p class="muted">Loading…</p>';
+    document.getElementById('dashDrillBackdrop').hidden = false;
     db.collection('sales').where(field, '==', key).get().then(function (snap) {
       var rows = snap.docs.map(function (d) { return d.data(); });
       rows.sort(function (a, b) {
@@ -1081,15 +1284,15 @@
         return (a.sku || '').localeCompare(b.sku || '');
       });
       if (!rows.length) {
-        document.getElementById('salesDrillBody').innerHTML = '<p class="muted">No transactions found.</p>';
+        document.getElementById('dashDrillBody').innerHTML = '<p class="muted">No transactions found.</p>';
         return;
       }
       var body = rows.map(function (t) {
-        var noteTag = t.matched ? '' : '<div class="muted">' + escapeHtml(t.note || 'No cost match') + '</div>';
+        var noteTag = t.matched ? '' : '<div class="muted">No cost match</div>';
         return '<tr>' +
           '<td>' + escapeHtml(t.monthLabel || t.monthKey) + '</td>' +
           '<td>' + escapeHtml(t.sku) + '<div class="muted">' + escapeHtml(t.description || '') + '</div></td>' +
-          '<td>' + escapeHtml(t.client || '') + '</td>' +
+          '<td>' + escapeHtml(t.client || '') + '<div class="muted">' + escapeHtml(t.accounts || '') + '</div></td>' +
           '<td class="right">' + (t.quantity != null ? t.quantity.toLocaleString() : '—') + '</td>' +
           '<td class="right">' + fmtPeso(t.sales) + '</td>' +
           '<td class="right">' + (t.unitCost != null ? t.unitCost.toFixed(4) : '<span class="empty-val">—</span>') + '</td>' +
@@ -1097,30 +1300,35 @@
           '<td class="right">' + fmtPct(t.grossProfitRate) + noteTag + '</td>' +
           '</tr>';
       }).join('');
-      document.getElementById('salesDrillBody').innerHTML =
+      document.getElementById('dashDrillBody').innerHTML =
         '<div class="sales-grid-wrap"><table class="sales-grid"><thead><tr>' +
-        '<th>Month</th><th>SKU</th><th>Client</th><th class="right">Qty</th><th class="right">Sales</th>' +
+        '<th>Month</th><th>SKU</th><th>Client / Account</th><th class="right">Qty</th><th class="right">Sales</th>' +
         '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
         '</tr></thead><tbody>' + body + '</tbody></table></div>';
     }).catch(function (err) {
-      document.getElementById('salesDrillBody').innerHTML = '<p class="muted">Could not load transactions. ' + (err && err.message ? err.message : '') + '</p>';
+      document.getElementById('dashDrillBody').innerHTML = '<p class="muted">Could not load transactions. ' + (err && err.message ? err.message : '') + '</p>';
     });
   }
-  function backToSalesSummary() {
-    document.getElementById('salesDrillWrap').hidden = true;
-    document.getElementById('salesSummaryWrap').hidden = false;
-  }
+  function closeDashDrill() { document.getElementById('dashDrillBackdrop').hidden = true; }
 
-  document.getElementById('salesBtn').addEventListener('click', openSalesModal);
-  document.getElementById('salesCloseBtn').addEventListener('click', closeSalesModal);
-  document.getElementById('salesBackdrop').addEventListener('click', function (e) {
-    if (e.target === document.getElementById('salesBackdrop')) closeSalesModal();
+  document.getElementById('dashDrillCloseBtn').addEventListener('click', closeDashDrill);
+  document.getElementById('dashDrillBackdrop').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('dashDrillBackdrop')) closeDashDrill();
   });
-  document.getElementById('salesGroupSelect').addEventListener('change', function (e) {
-    salesGroupBy = e.target.value;
-    if (salesSummaryCache) renderSalesSummaryTable();
+  document.getElementById('dashboardView').addEventListener('click', function (e) {
+    var tr = e.target.closest ? e.target.closest('.sales-row') : null;
+    if (!tr) return;
+    var field = tr.getAttribute('data-field');
+    var key = tr.getAttribute('data-key');
+    var label = tr.getAttribute('data-label') || key;
+    if (field && key) openDashDrill(field, key, label);
   });
-  document.getElementById('salesDrillBackBtn').addEventListener('click', backToSalesSummary);
+  document.getElementById('dashboardView').addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'dashAcctMonthSelect') {
+      dashAccountMonthFilter = e.target.value;
+      renderAccountsSection();
+    }
+  });
 
   // --- Modal ---
   function openModal(docId) {
@@ -1190,6 +1398,7 @@
         body.duplicate = existing ? !!existing.duplicate : false;
         body.costNote = existing ? existing.costNote || null : null;
         await col.doc(editingDocId).update(body);
+        logActivity('edit', body.sku);
       } else {
         var docId = pathSafe(body.sku);
         if (!docId) { alert('Please enter a SKU code.'); saveBtn.disabled = false; saveBtn.textContent = 'Save'; return; }
@@ -1203,6 +1412,7 @@
         body.duplicate = false;
         body.costNote = null;
         await col.doc(docId).set(body);
+        logActivity('add', body.sku);
       }
       closeModal();
     } catch (err) {
@@ -1221,7 +1431,9 @@
     if (!editingDocId || !col) return;
     if (!confirm('Remove this SKU from the database? This cannot be undone.')) return;
     try {
+      var deletedRecord = records.find(function (x) { return x.docId === editingDocId; });
       await col.doc(editingDocId).delete();
+      logActivity('delete', deletedRecord ? deletedRecord.sku : editingDocId);
       closeModal();
     } catch (err) {
       var msg = err && err.message ? err.message : 'unknown error';
