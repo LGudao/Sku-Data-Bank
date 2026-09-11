@@ -328,6 +328,17 @@
   .rank-matrix-table td, .rank-matrix-table th { text-align: center !important; }
   .rank-matrix-table td:first-child, .rank-matrix-table th:first-child { text-align: left !important; }
   .rank-1 { color: var(--accent); font-weight: 700; }
+
+  .client-cluster { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; background: var(--surface-alt); }
+  .client-cluster-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .client-cluster-head input[type="text"] { flex: 1; min-width: 220px; font-weight: 600; }
+  .client-variant-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 13px; }
+  .client-variant-row .cv-name { flex: 1; }
+  .client-variant-row .cv-stats { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+  .client-single-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
+  .client-single-row .cs-name { flex: 1; min-width: 180px; }
+  .client-single-row .cs-stats { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+  .client-single-row input[type="text"] { min-width: 200px; }
 </style>
 </head>
 <body>
@@ -350,6 +361,7 @@
       <button class="view-tab" id="skusTabBtn" type="button">SKU Database</button>
       <button class="view-tab" id="salesReportTabBtn" type="button" hidden>Sales report</button>
       <button class="view-tab" id="reportBtn" type="button">Price history report</button>
+      <button class="view-tab" id="clientDataTabBtn" type="button" hidden>Client data</button>
     </div>
     <button class="btn-ghost" id="viewLogBtn" type="button" hidden>Sign-in &amp; activity log</button>
   </div>
@@ -357,6 +369,8 @@
   <div id="dashboardView" hidden></div>
 
   <div id="salesReportView" hidden></div>
+
+  <div id="clientDataView" hidden></div>
 
   <div id="skusView">
 
@@ -523,7 +537,8 @@
         </div>
         <div class="field">
           <label for="f_client">Client</label>
-          <input id="f_client" />
+          <input id="f_client" list="clientNamesList" autocomplete="off" />
+          <datalist id="clientNamesList"></datalist>
         </div>
         <div class="field">
           <label for="f_currency">Currency</label>
@@ -580,6 +595,24 @@
   var activeDocs = new Map();
   var inactiveDocs = new Map();
   var records = [];
+  var clientAliasMap = {};
+  function applyClientAlias(name) {
+    var key = String(name || '').trim();
+    return clientAliasMap[key] || key;
+  }
+  function loadClientAliasMap() {
+    if (!db) return Promise.resolve();
+    return db.collection('clients').get().then(function (snap) {
+      var map = {};
+      snap.docs.forEach(function (d) {
+        var data = d.data();
+        if (!data || !data.name) return;
+        map[data.name] = data.name;
+        (data.aliases || []).forEach(function (a) { map[a] = data.name; });
+      });
+      clientAliasMap = map;
+    }).catch(function () {});
+  }
   var sortKey = 'sku';
   var sortDir = 'asc';
   var page = 1;
@@ -948,8 +981,11 @@
     if (dashTabBtnEl) dashTabBtnEl.hidden = role !== 'admin';
     var salesReportTabBtnEl = document.getElementById('salesReportTabBtn');
     if (salesReportTabBtnEl) salesReportTabBtnEl.hidden = !isAdminLike(role);
+    var clientDataTabBtnEl = document.getElementById('clientDataTabBtn');
+    if (clientDataTabBtnEl) clientDataTabBtnEl.hidden = role !== 'admin';
     if (role !== 'admin' && currentView === 'dashboard') setActiveTab('skus');
     if (!isAdminLike(role) && currentView === 'salesReport') setActiveTab('skus');
+    if (role !== 'admin' && currentView === 'clientData') setActiveTab('skus');
   }
 
   function setActiveTab(view) {
@@ -957,11 +993,14 @@
     document.getElementById('dashTabBtn').classList.toggle('active', view === 'dashboard');
     document.getElementById('skusTabBtn').classList.toggle('active', view === 'skus');
     document.getElementById('salesReportTabBtn').classList.toggle('active', view === 'salesReport');
+    document.getElementById('clientDataTabBtn').classList.toggle('active', view === 'clientData');
     document.getElementById('dashboardView').hidden = view !== 'dashboard';
     document.getElementById('skusView').hidden = view !== 'skus';
     document.getElementById('salesReportView').hidden = view !== 'salesReport';
+    document.getElementById('clientDataView').hidden = view !== 'clientData';
     if (view === 'dashboard') loadDashboard();
     if (view === 'salesReport') loadSalesReportView();
+    if (view === 'clientData') loadClientDataView();
   }
 
   function logOut() {
@@ -1071,6 +1110,7 @@
   document.getElementById('dashTabBtn').addEventListener('click', function () { setActiveTab('dashboard'); });
   document.getElementById('skusTabBtn').addEventListener('click', function () { setActiveTab('skus'); });
   document.getElementById('salesReportTabBtn').addEventListener('click', function () { setActiveTab('salesReport'); });
+  document.getElementById('clientDataTabBtn').addEventListener('click', function () { setActiveTab('clientData'); });
 
   document.getElementById('gateForm').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -1679,7 +1719,7 @@
         accounts: headerMap.accounts ? String(raw[headerMap.accounts] || '') : '',
         structure: headerMap.structure ? (String(raw[headerMap.structure] || '').trim() || 'UNSPECIFIED') : 'UNSPECIFIED',
         itemClass: headerMap.itemClass ? (String(raw[headerMap.itemClass] || '').trim() || 'UNSPECIFIED') : 'UNSPECIFIED',
-        client: String(raw[headerMap.client] || '').trim(),
+        client: applyClientAlias(String(raw[headerMap.client] || '').trim()),
         description: headerMap.description ? String(raw[headerMap.description] || '') : '',
         um: headerMap.um ? String(raw[headerMap.um] || '') : '',
         quantity: Number(raw[headerMap.quantity]) || 0,
@@ -1757,6 +1797,20 @@
     }).then(function () {
       return writeDocsBatched(collectionName, docsObj);
     });
+  }
+  function batchUpdateField(collectionName, docIds, fieldObj) {
+    var chunkSize = 450;
+    var chain = Promise.resolve();
+    for (var i = 0; i < docIds.length; i += chunkSize) {
+      (function (chunk) {
+        chain = chain.then(function () {
+          var batch = db.batch();
+          chunk.forEach(function (id) { batch.set(db.collection(collectionName).doc(id), fieldObj, { merge: true }); });
+          return batch.commit();
+        });
+      })(docIds.slice(i, i + chunkSize));
+    }
+    return chain;
   }
 
   function computeAggregates(allTxns) {
@@ -1997,9 +2051,301 @@
     if (file) handleUploadFile(file);
   });
 
+  // --- Client data (duplicate detection / merge) ---
+  var CLIENT_LEGAL_SUFFIX_WORDS = ['INC', 'INCORPORATED', 'CORP', 'CORPORATION', 'CO', 'COMPANY', 'LTD', 'LIMITED', 'OPC', 'PLC'];
+  function clientNormalize(raw) {
+    var s = String(raw || '').toUpperCase();
+    s = s.replace(/[’‘`´]/g, "'");
+    s = s.replace(/["“”]/g, '');
+    s = s.replace(/\([^)]*\)/g, ' ');
+    s = s.replace(/[.,]/g, ' ');
+    s = s.replace(/&/g, ' AND ');
+    s = s.replace(/[^A-Z0-9' ]/g, ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+    var words = s.split(' ').filter(function (w) { return CLIENT_LEGAL_SUFFIX_WORDS.indexOf(w) === -1; });
+    var core = words.join(' ').trim();
+    var loose = core.replace(/\s+/g, '');
+    return { normalized: s, core: core || s, loose: loose || s.replace(/\s+/g, '') };
+  }
+  function clientLevenshtein(a, b) {
+    var m = a.length, n = b.length;
+    var dp = [];
+    for (var i = 0; i <= m; i++) { dp.push(new Array(n + 1).fill(0)); dp[i][0] = i; }
+    for (var j = 0; j <= n; j++) dp[0][j] = j;
+    for (i = 1; i <= m; i++) {
+      for (j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+    return dp[m][n];
+  }
+  function makeClientUnionFind(n) {
+    var parent = [];
+    for (var i = 0; i < n; i++) parent.push(i);
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    function union(a, b) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+    return { find: find, union: union };
+  }
+  function clusterClientNames(names) {
+    var keys = names.map(function (n) { return clientNormalize(n); });
+    var uf = makeClientUnionFind(names.length);
+    var looseMap = {};
+    keys.forEach(function (k, i) { (looseMap[k.loose] = looseMap[k.loose] || []).push(i); });
+    Object.keys(looseMap).forEach(function (lk) {
+      var idxs = looseMap[lk];
+      for (var i = 1; i < idxs.length; i++) uf.union(idxs[0], idxs[i]);
+    });
+    var looseKeysArr = Object.keys(looseMap);
+    for (var a = 0; a < looseKeysArr.length; a++) {
+      for (var b = a + 1; b < looseKeysArr.length; b++) {
+        var ka = looseKeysArr[a], kb = looseKeysArr[b];
+        if (Math.abs(ka.length - kb.length) > 3) continue;
+        if (ka.length < 6 || kb.length < 6) continue;
+        var dist = clientLevenshtein(ka, kb);
+        if (dist <= 2) uf.union(looseMap[ka][0], looseMap[kb][0]);
+      }
+    }
+    var groups = {};
+    names.forEach(function (n, i) { var root = uf.find(i); (groups[root] = groups[root] || []).push(n); });
+    return Object.keys(groups).map(function (k) { return groups[k]; });
+  }
+
+  // Keyed by clientNormalize(raw).normalized so punctuation/spacing variants of the
+  // same raw string collapse to one key. Pre-filled from Lyza's explicit corrections.
+  var KNOWN_CLIENT_CANONICAL_OVERRIDES = {
+    'GOLDILOCKS BAKE SHOP INC': 'Goldilocks Bakeshop Inc.',
+    'GOLDILOCKS BAKESHOP INC': 'Goldilocks Bakeshop Inc.',
+    'MAGNOLIA': 'Magnolia Inc.',
+    'MAGNOLIA INC': 'Magnolia Inc.',
+    'PROCTER AND GAMBLE PHILIPPINES INC': 'Procter & Gamble Philippines, Inc.',
+    'PROCTER AND GAMBLE': 'Procter & Gamble Philippines, Inc.',
+    'GOLDEN ARCHES DEVELOPEMENT CORPORATION': 'Golden Arches Development Corporation',
+    'GOLDEN ARCHES DEVELOPMENT CORPORATION': 'Golden Arches Development Corporation',
+    'RICH BAKE INC': 'Richbake, Inc',
+    'RICHBAKE INC': 'Richbake, Inc',
+    'BITES TO GO INC': 'Bitestogo, Inc.',
+    'BITESTOGO INC': 'Bitestogo, Inc.',
+    'NORTH POINT INC': 'Northpoint Inc.',
+    'NORTHPOINT INC': 'Northpoint Inc.',
+  };
+  function clientHasOverride(variants) {
+    return variants.some(function (v) { return !!KNOWN_CLIENT_CANONICAL_OVERRIDES[clientNormalize(v).normalized]; });
+  }
+  function suggestCanonicalName(variants, usageMap) {
+    for (var i = 0; i < variants.length; i++) {
+      var norm = clientNormalize(variants[i]).normalized;
+      if (KNOWN_CLIENT_CANONICAL_OVERRIDES[norm]) return KNOWN_CLIENT_CANONICAL_OVERRIDES[norm];
+    }
+    var best = variants[0], bestScore = -1;
+    variants.forEach(function (v) {
+      var u = usageMap[v] || {};
+      var score = (u.skuCount || 0) + (u.salesTxnCount || 0);
+      if (score > bestScore) { bestScore = score; best = v; }
+    });
+    return best;
+  }
+  function fmtClientUsage(u) {
+    u = u || {};
+    var parts = [];
+    if (u.skuCount) parts.push(u.skuCount + ' SKU' + (u.skuCount === 1 ? '' : 's'));
+    if (u.salesTxnCount) parts.push(u.salesTxnCount.toLocaleString() + ' sale txn' + (u.salesTxnCount === 1 ? '' : 's'));
+    return parts.length ? parts.join(' · ') : 'no linked records';
+  }
+
+  var clientDataMultiClusters = [];
+
+  function loadClientDataView() {
+    var el = document.getElementById('clientDataView');
+    el.innerHTML = '<div class="dash-wrap"><p class="muted">Loading client names…</p></div>';
+    if (!db) return;
+    Promise.all([
+      db.collection('salesSummaryClient').get().catch(function () { return null; }),
+    ]).then(function (results) {
+      var usageMap = {};
+      records.forEach(function (r) {
+        var c = (r.client || '').trim();
+        if (!c) return;
+        usageMap[c] = usageMap[c] || { skuCount: 0, salesTxnCount: 0, salesTotal: 0 };
+        usageMap[c].skuCount++;
+      });
+      if (results[0]) {
+        results[0].docs.forEach(function (d) {
+          var data = d.data() || {};
+          var c = (data.label || data.key || '').toString().trim();
+          if (!c) return;
+          usageMap[c] = usageMap[c] || { skuCount: 0, salesTxnCount: 0, salesTotal: 0 };
+          usageMap[c].salesTxnCount += data.txnCount || 0;
+          usageMap[c].salesTotal += data.sales || 0;
+        });
+      }
+      var names = Object.keys(usageMap);
+      var clusters = clusterClientNames(names);
+      renderClientDataView(clusters, usageMap);
+    }).catch(function (err) {
+      el.innerHTML = '<div class="dash-wrap"><p class="muted">Could not load client data. ' + escapeHtml(err && err.message ? err.message : 'unknown error') + '</p></div>';
+    });
+  }
+
+  function renderClientDataView(clusters, usageMap) {
+    var el = document.getElementById('clientDataView');
+    var allNames = Object.keys(usageMap);
+    var multi = clusters.filter(function (c) { return c.length > 1; }).map(function (c) {
+      return c.slice().sort(function (a, b) { return a.localeCompare(b); });
+    });
+    var single = clusters.filter(function (c) { return c.length === 1; }).map(function (c) { return c[0]; });
+    multi.sort(function (a, b) {
+      var ao = clientHasOverride(a), bo = clientHasOverride(b);
+      if (ao !== bo) return ao ? -1 : 1;
+      return a[0].localeCompare(b[0]);
+    });
+    single.sort(function (a, b) { return a.localeCompare(b); });
+    clientDataMultiClusters = multi;
+
+    var html = '<div class="dash-wrap">';
+    html += '<div class="dash-head"><h2>Client data</h2><p class="dash-note">' + allNames.length + ' distinct client name(s) found across the SKU Data Bank and sales data — ' + multi.length + ' possible duplicate group(s) below. Nothing changes until you edit a name and click Merge or Save.</p></div>';
+    html += '<p id="clientDataStatus" class="dash-note"></p>';
+
+    if (multi.length) {
+      html += '<div class="dash-section"><div class="dash-section-head"><h3>Suggested duplicate groups (' + multi.length + ')</h3></div>';
+      multi.forEach(function (variants, ci) {
+        var suggestion = suggestCanonicalName(variants, usageMap);
+        html += '<div class="client-cluster" data-cluster-index="' + ci + '">';
+        html += '<div class="client-cluster-head">';
+        html += '<input type="text" class="cluster-name-input" value="' + escapeHtml(suggestion) + '" />';
+        html += '<button type="button" class="btn-primary cluster-merge-btn" data-cluster-index="' + ci + '">Merge into this name</button>';
+        html += '</div>';
+        variants.forEach(function (v) {
+          html += '<div class="client-variant-row"><span class="cv-name">' + escapeHtml(v) + '</span><span class="cv-stats">' + escapeHtml(fmtClientUsage(usageMap[v])) + '</span></div>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="dash-section"><p class="dash-note">No likely duplicates detected among the current names.</p></div>';
+    }
+
+    html += '<div class="dash-section"><div class="dash-section-head"><h3>All other client names (' + single.length + ')</h3></div>';
+    single.forEach(function (name, si) {
+      var norm = clientNormalize(name).normalized;
+      var override = KNOWN_CLIENT_CANONICAL_OVERRIDES[norm];
+      var prefill = override && override !== name ? override : name;
+      html += '<div class="client-single-row" data-single-index="' + si + '">';
+      html += '<span class="cs-name">' + escapeHtml(name) + '</span>';
+      html += '<span class="cs-stats">' + escapeHtml(fmtClientUsage(usageMap[name])) + '</span>';
+      html += '<input type="text" class="single-name-input" value="' + escapeHtml(prefill) + '" />';
+      html += '<button type="button" class="btn-ghost single-rename-btn" data-original="' + escapeHtml(name) + '">Save</button>';
+      html += '</div>';
+    });
+    if (!single.length) html += '<p class="dash-note">None.</p>';
+    html += '</div>';
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function mergeClientNames(canonicalName, variantsRaw) {
+    canonicalName = String(canonicalName || '').trim();
+    if (!canonicalName) { alert('Please enter the correct client name.'); return Promise.resolve(); }
+    if (!db) { alert('Live database is not connected in this view — changes cannot be saved right now.'); return Promise.resolve(); }
+    var variants = Array.from(new Set(variantsRaw)).filter(function (v) { return v !== canonicalName; });
+    if (!variants.length) { alert('Nothing to merge — the selected name(s) already match.'); return Promise.resolve(); }
+
+    var statusEl = document.getElementById('clientDataStatus');
+    if (statusEl) statusEl.textContent = 'Merging into "' + canonicalName + '"…';
+    var nowIso = new Date().toISOString();
+
+    var skuDocIds = records.filter(function (r) { return variants.indexOf((r.client || '').trim()) !== -1; }).map(function (r) { return r.docId; });
+    var skuUpdate = skuDocIds.length
+      ? batchUpdateField('skus', skuDocIds, { client: canonicalName, updatedAt: nowIso, updatedBy: displayName || 'Unknown' })
+      : Promise.resolve();
+
+    return skuUpdate.then(function () {
+      return db.collection('sales').get();
+    }).then(function (snap) {
+      var allTxns = snap.docs.map(function (d) { return d.data(); });
+      var changedById = {};
+      allTxns.forEach(function (t) {
+        if (variants.indexOf((t.client || '').trim()) !== -1) {
+          t.client = canonicalName;
+          changedById[t.docId] = t;
+        }
+      });
+      if (!Object.keys(changedById).length) return Promise.resolve();
+      var aggregates = computeAggregates(allTxns);
+      return writeDocsBatched('sales', changedById).then(function () {
+        return wipeAndWriteCollection('salesSummaryMonth', aggregates.summaryMonth);
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummaryClient', aggregates.summaryClient);
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummarySku', aggregates.summarySku);
+      }).then(function () {
+        return db.collection('salesDashboard').doc('summary').set(aggregates.dashboard);
+      }).then(function () {
+        dashboardCache = aggregates.dashboard;
+      });
+    }).then(function () {
+      return db.collection('clients').doc(pathSafe(canonicalName)).set({
+        name: canonicalName,
+        aliases: firebase.firestore.FieldValue.arrayUnion.apply(null, variants.concat([canonicalName])),
+        updatedAt: nowIso,
+        updatedBy: displayName || 'Unknown',
+      }, { merge: true });
+    }).then(function () {
+      variants.concat([canonicalName]).forEach(function (v) { clientAliasMap[v] = canonicalName; });
+      salesReportClientsCache = null;
+      logActivity('client-merge', canonicalName + ' <- ' + variants.join(' | '));
+      if (currentView === 'dashboard') renderDashboard();
+      if (currentView === 'salesReport') loadSalesReportView();
+    }).catch(function (err) {
+      var msg = err && err.message ? err.message : 'unknown error';
+      alert('Could not complete the merge: ' + msg);
+    }).then(function () {
+      return loadClientDataView();
+    });
+  }
+
+  document.getElementById('clientDataView').addEventListener('click', function (e) {
+    var mergeBtn = e.target.closest ? e.target.closest('.cluster-merge-btn') : null;
+    if (mergeBtn) {
+      var idx = parseInt(mergeBtn.getAttribute('data-cluster-index'), 10);
+      var variants = clientDataMultiClusters[idx];
+      if (!variants) return;
+      var clusterEl = mergeBtn.closest('.client-cluster');
+      var input = clusterEl.querySelector('.cluster-name-input');
+      var canonicalName = input.value.trim();
+      if (!canonicalName) { alert('Please enter the correct client name.'); return; }
+      if (!confirm('Merge these ' + variants.length + ' name(s) into "' + canonicalName + '"?\n\n' + variants.join('\n') + '\n\nThis updates the SKU Data Bank and sales data together.')) return;
+      mergeBtn.disabled = true; mergeBtn.textContent = 'Merging…';
+      mergeClientNames(canonicalName, variants);
+      return;
+    }
+    var renameBtn = e.target.closest ? e.target.closest('.single-rename-btn') : null;
+    if (renameBtn) {
+      var original = renameBtn.getAttribute('data-original');
+      var rowEl = renameBtn.closest('.client-single-row');
+      var input2 = rowEl.querySelector('.single-name-input');
+      var newName = input2.value.trim();
+      if (!newName) { alert('Please enter a client name.'); return; }
+      if (newName === original) { alert('No change — that is already the current name.'); return; }
+      if (!confirm('Rename "' + original + '" to "' + newName + '"?\n\nThis updates the SKU Data Bank and sales data together.')) return;
+      renameBtn.disabled = true; renameBtn.textContent = 'Saving…';
+      mergeClientNames(newName, [original]);
+      return;
+    }
+  });
+
   // --- Modal ---
+  function populateClientDatalist() {
+    var dl = document.getElementById('clientNamesList');
+    if (!dl) return;
+    var names = {};
+    records.forEach(function (r) { if (r.client) names[r.client.trim()] = true; });
+    Object.keys(clientAliasMap).forEach(function (k) { names[clientAliasMap[k]] = true; });
+    var sorted = Object.keys(names).filter(Boolean).sort(function (a, b) { return a.localeCompare(b); });
+    dl.innerHTML = sorted.map(function (n) { return '<option value="' + escapeHtml(n) + '"></option>'; }).join('');
+  }
   function openModal(docId) {
     editingDocId = docId || null;
+    populateClientDatalist();
     var r = editingDocId ? records.find(function (x) { return x.docId === editingDocId; }) : null;
     var lockedOut = canEdit === false;
     document.getElementById('modalTitle').textContent = r ? 'Edit SKU' : 'Add SKU';
@@ -2171,6 +2517,7 @@
       } catch (e) {}
     }
     col = db.collection('skus');
+    loadClientAliasMap();
     unsubActive = col.where('status', '==', 'ACTIVE').limit(1000).onSnapshot(function (snap) {
       activeDocs.clear();
       snap.docs.forEach(function (d) { activeDocs.set(d.id, d.data()); });
