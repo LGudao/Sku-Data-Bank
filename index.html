@@ -1455,7 +1455,8 @@
   var salesReportFilterValue = '';
   var salesReportCurrentRows = [];
   var salesReportClientsCache = null;
-  var srMonthOptionsHtml = '', srClientOptionsHtml = '', srAccountOptionsHtml = '';
+  var salesReportSkusCache = null;
+  var srMonthOptionsHtml = '', srClientOptionsHtml = '', srAccountOptionsHtml = '', srSkuOptionsHtml = '';
 
   function loadSalesReportView() {
     var wrap = document.getElementById('salesReportView');
@@ -1463,12 +1464,15 @@
     if (!db) { wrap.innerHTML = '<p class="muted" style="padding:40px 0;text-align:center;">Live database is not connected.</p>'; return; }
     var needDashboard = !dashboardCache;
     var needClients = !salesReportClientsCache;
+    var needSkus = !salesReportSkusCache;
     Promise.all([
       needDashboard ? db.collection('salesDashboard').doc('summary').get() : Promise.resolve(null),
       needClients ? db.collection('salesSummaryClient').get() : Promise.resolve(null),
+      needSkus ? db.collection('salesSummarySku').get() : Promise.resolve(null),
     ]).then(function (results) {
       if (results[0]) dashboardCache = results[0].exists ? results[0].data() : { months: [], accounts: [] };
       if (results[1]) salesReportClientsCache = results[1].docs.map(function (d) { return d.data().label || d.id; }).sort(function (a, b) { return a.localeCompare(b); });
+      if (results[2]) salesReportSkusCache = results[2].docs.map(function (d) { var v = d.data(); return { sku: v.label || d.id, description: v.description || '' }; }).sort(function (a, b) { return a.sku.localeCompare(b.sku); });
       renderSalesReportShell();
       fetchAndRenderSalesReport();
     }).catch(function (err) {
@@ -1482,6 +1486,7 @@
     srMonthOptionsHtml = (d.months || []).map(function (m) { return '<option value="' + escapeHtml(m.key) + '">' + escapeHtml(m.label) + '</option>'; }).join('');
     srClientOptionsHtml = (salesReportClientsCache || []).map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
     srAccountOptionsHtml = (d.accounts || []).map(function (a) { return '<option value="' + escapeHtml(a.account) + '">' + escapeHtml(a.account) + '</option>'; }).join('');
+    srSkuOptionsHtml = (salesReportSkusCache || []).map(function (s) { return '<option value="' + escapeHtml(s.sku) + '">' + escapeHtml(s.sku) + (s.description ? (' — ' + escapeHtml(s.description)) : '') + '</option>'; }).join('');
 
     wrap.innerHTML =
       '<div class="dash-wrap">' +
@@ -1494,6 +1499,7 @@
                 '<option value="month">By month</option>' +
                 '<option value="client">By client</option>' +
                 '<option value="account">By account</option>' +
+                '<option value="sku">By Inventory ID / SKU</option>' +
               '</select>' +
               '<select id="srFilterValue" hidden></select>' +
             '</div>' +
@@ -1515,6 +1521,7 @@
     if (salesReportFilterType === 'month') { sel.innerHTML = srMonthOptionsHtml; sel.hidden = false; }
     else if (salesReportFilterType === 'client') { sel.innerHTML = '<option value="">Choose a client…</option>' + srClientOptionsHtml; sel.hidden = false; }
     else if (salesReportFilterType === 'account') { sel.innerHTML = '<option value="">Choose an account…</option>' + srAccountOptionsHtml; sel.hidden = false; }
+    else if (salesReportFilterType === 'sku') { sel.innerHTML = '<option value="">Choose an Inventory ID / SKU…</option>' + srSkuOptionsHtml; sel.hidden = false; }
     else { sel.innerHTML = ''; sel.hidden = true; }
     if (salesReportFilterValue) sel.value = salesReportFilterValue;
   }
@@ -1529,6 +1536,7 @@
     else if (type === 'month' && value) query = db.collection('sales').where('monthKey', '==', value).get();
     else if (type === 'client' && value) query = db.collection('sales').where('client', '==', value).get();
     else if (type === 'account' && value) query = db.collection('sales').where('accounts', '==', value).get();
+    else if (type === 'sku' && value) query = db.collection('sales').where('sku', '==', value).get();
     else { tableWrap.innerHTML = '<p class="muted">Choose a value above.</p>'; salesReportCurrentRows = []; return; }
 
     query.then(function (snap) {
@@ -2024,6 +2032,7 @@
       }).then(function () {
         dashboardCache = aggregates.dashboard;
         salesReportClientsCache = null;
+        salesReportSkusCache = null;
         var matchSummary = 'Exact month: ' + (matchCounts.exact_month || 0) + ', nearest available month: ' + (matchCounts.nearest_month || 0) +
           ', flat current cost: ' + (matchCounts.flat_current || 0) + ', no cost found: ' + ((matchCounts.unmatched || 0) + (matchCounts.no_sku_match || 0));
         var monthLabels = Array.from(new Set(newTxns.map(function (t) { return t.monthLabel; })));
