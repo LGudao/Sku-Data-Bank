@@ -290,6 +290,8 @@
   .sales-grid td.right, .sales-grid th.right { text-align: right; }
   .sales-grid tbody tr.sales-row { cursor: pointer; }
   .sales-grid tbody tr.sales-row:hover td { background: var(--accent-soft); }
+  .sr-cost-input { width: 92px; text-align: right; padding: 4px 6px; font-size: 13px; }
+  .sr-save-cost-btn { padding: 3px 10px; font-size: 12px; }
   .sales-grid-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 46vh; overflow-y: auto; }
   .gp-neg { color: var(--danger); }
   .hist-cell { cursor: pointer; }
@@ -1559,6 +1561,8 @@
     var shown = rows.slice(0, CAP);
     var body = shown.map(function (t) {
       var noteTag = t.matched ? '' : '<div class="muted">No cost match</div>';
+      var docIdAttr = escapeHtml(t.docId);
+      var costVal = t.unitCost != null ? t.unitCost : '';
       return '<tr>' +
         '<td>' + escapeHtml(t.monthLabel || t.monthKey) + '</td>' +
         '<td><div class="code">' + escapeHtml(t.sku) + '</div><div class="muted">' + escapeHtml(t.description || '') + '</div></td>' +
@@ -1566,17 +1570,72 @@
         '<td>' + escapeHtml(t.accounts || '') + '</td>' +
         '<td class="right">' + (t.quantity != null ? t.quantity.toLocaleString() : '—') + '</td>' +
         '<td class="right">' + fmtPeso(t.sales) + '</td>' +
-        '<td class="right">' + (t.unitCost != null ? t.unitCost.toFixed(4) : '<span class="empty-val">—</span>') + '</td>' +
-        '<td class="right">' + fmtPeso(t.grossProfit) + '</td>' +
-        '<td class="right">' + fmtPct(t.grossProfitRate) + noteTag + '</td>' +
+        '<td class="right"><input type="number" step="0.0001" min="0" class="sr-cost-input" data-doc-id="' + docIdAttr + '" data-original="' + costVal + '" value="' + costVal + '" /></td>' +
+        '<td class="right sr-gp-cell" data-doc-id="' + docIdAttr + '">' + fmtPeso(t.grossProfit) + '</td>' +
+        '<td class="right sr-gprate-cell" data-doc-id="' + docIdAttr + '">' + fmtPct(t.grossProfitRate) + noteTag + '</td>' +
+        '<td class="right"><button type="button" class="btn-ghost sr-save-cost-btn" data-doc-id="' + docIdAttr + '" hidden>Save</button></td>' +
         '</tr>';
     }).join('');
     tableWrap.innerHTML =
       '<div class="sales-grid-wrap" style="max-height:60vh;"><table class="sales-grid"><thead><tr>' +
       '<th>Month</th><th>SKU</th><th>Client</th><th>Account</th><th class="right">Qty</th><th class="right">Sales</th>' +
-      '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th>' +
+      '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th><th class="right"></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>' +
-      '<p class="hint">' + (rows.length > CAP ? ('Showing first ' + CAP.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' rows on screen — ') : '') + 'Download Excel exports all ' + rows.length.toLocaleString() + ' row(s).</p>';
+      '<p class="hint">' + (rows.length > CAP ? ('Showing first ' + CAP.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' rows on screen — ') : '') + 'Download Excel exports all ' + rows.length.toLocaleString() + ' row(s). Edit Unit Cost and click Save to correct a row — Gross Profit recalculates automatically and the Dashboard refreshes.</p>' +
+      '<p id="srCostStatus" class="dash-note"></p>';
+  }
+
+  function saveCostCorrection(docId) {
+    var input = document.querySelector('.sr-cost-input[data-doc-id="' + docId + '"]');
+    if (!input) return;
+    var raw = input.value;
+    var newCost = raw === '' ? null : parseFloat(raw);
+    if (raw !== '' && (isNaN(newCost) || newCost < 0)) { alert('Please enter a valid, non-negative unit cost.'); return; }
+    if (!db) { alert('Live database is not connected in this view — changes cannot be saved right now.'); return; }
+    var row = salesReportCurrentRows.find(function (r) { return r.docId === docId; });
+    if (!row) return;
+    var saveBtn = document.querySelector('.sr-save-cost-btn[data-doc-id="' + docId + '"]');
+    var statusEl = document.getElementById('srCostStatus');
+    var qty = row.quantity || 0;
+    var totalUnitCost = newCost != null ? newCost * qty : 0;
+    var grossProfit = row.sales - totalUnitCost;
+    var grossProfitRate = row.sales ? grossProfit / row.sales : 0;
+
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    if (statusEl) statusEl.textContent = 'Saving corrected cost for ' + row.sku + '…';
+
+    db.collection('sales').doc(docId).set({
+      unitCost: newCost, totalUnitCost: totalUnitCost, grossProfit: grossProfit, grossProfitRate: grossProfitRate,
+      matched: newCost != null, costOverride: true, costOverrideAt: new Date().toISOString(), costOverrideBy: displayName || 'Unknown',
+    }, { merge: true }).then(function () {
+      row.unitCost = newCost; row.totalUnitCost = totalUnitCost; row.grossProfit = grossProfit; row.grossProfitRate = grossProfitRate; row.matched = newCost != null;
+      logActivity('cost-correction', row.sku);
+      renderSalesReportTable(salesReportCurrentRows);
+      var s1 = document.getElementById('srCostStatus');
+      if (s1) s1.textContent = 'Saved. Recalculating Dashboard and summary totals…';
+      return db.collection('sales').get();
+    }).then(function (snap) {
+      var allTxns = snap.docs.map(function (d) { return d.data(); });
+      var aggregates = computeAggregates(allTxns);
+      return wipeAndWriteCollection('salesSummaryMonth', aggregates.summaryMonth).then(function () {
+        return wipeAndWriteCollection('salesSummaryClient', aggregates.summaryClient);
+      }).then(function () {
+        return wipeAndWriteCollection('salesSummarySku', aggregates.summarySku);
+      }).then(function () {
+        return db.collection('salesDashboard').doc('summary').set(aggregates.dashboard);
+      }).then(function () {
+        dashboardCache = aggregates.dashboard;
+        var s2 = document.getElementById('srCostStatus');
+        if (s2) s2.textContent = 'Saved — the Dashboard and summaries now reflect the corrected cost.';
+        if (currentView === 'dashboard') renderDashboard();
+      });
+    }).catch(function (err) {
+      var msg = err && err.message ? err.message : 'unknown error';
+      alert('Could not save the cost correction: ' + msg);
+      var s3 = document.getElementById('srCostStatus');
+      if (s3) s3.textContent = '';
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    });
   }
 
   function downloadSalesReportExcel() {
@@ -1587,7 +1646,7 @@
         'Client': t.client || '', 'Account': t.accounts || '', 'Structure': t.structure || '', 'Item Class': t.itemClass || '',
         'U/M': t.um || '', 'Quantity': t.quantity, 'Sales': t.sales, 'Unit Cost (VAT-ex)': t.unitCost != null ? t.unitCost : '',
         'Total Unit Cost': t.totalUnitCost != null ? t.totalUnitCost : '', 'Gross Profit': t.grossProfit, 'GP Rate': t.grossProfitRate,
-        'Cost Matched': t.matched ? 'Yes' : 'No',
+        'Cost Matched': t.matched ? 'Yes' : 'No', 'Manually Corrected': t.costOverride ? 'Yes' : 'No',
       };
     });
     var label = salesReportFilterType === 'all' ? 'All_Transactions' : (salesReportFilterType + '_' + (salesReportFilterValue || '').replace(/[^A-Za-z0-9]+/g, '_'));
@@ -1612,7 +1671,31 @@
       document.getElementById('uploadSalesBackdrop').hidden = false;
     } else if (e.target.id === 'srDownloadBtn') {
       downloadSalesReportExcel();
+    } else if (e.target.classList && e.target.classList.contains('sr-save-cost-btn')) {
+      saveCostCorrection(e.target.getAttribute('data-doc-id'));
     }
+  });
+  document.getElementById('salesReportView').addEventListener('input', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('sr-cost-input')) return;
+    var docId = e.target.getAttribute('data-doc-id');
+    var row = salesReportCurrentRows.find(function (r) { return r.docId === docId; });
+    var saveBtn = document.querySelector('.sr-save-cost-btn[data-doc-id="' + docId + '"]');
+    if (!row) return;
+    var raw = e.target.value;
+    var newCost = raw === '' ? null : parseFloat(raw);
+    if (raw !== '' && isNaN(newCost)) { if (saveBtn) saveBtn.hidden = true; return; }
+    var qty = row.quantity || 0;
+    var totalUnitCost = newCost != null ? newCost * qty : 0;
+    var grossProfit = row.sales - totalUnitCost;
+    var grossProfitRate = row.sales ? grossProfit / row.sales : 0;
+    var gpCell = document.querySelector('.sr-gp-cell[data-doc-id="' + docId + '"]');
+    var gpRateCell = document.querySelector('.sr-gprate-cell[data-doc-id="' + docId + '"]');
+    if (gpCell) gpCell.innerHTML = fmtPeso(grossProfit);
+    if (gpRateCell) gpRateCell.innerHTML = fmtPct(grossProfitRate);
+    var original = e.target.getAttribute('data-original');
+    var originalVal = original === '' ? null : parseFloat(original);
+    var changed = (newCost === null && originalVal !== null) || (newCost !== null && (originalVal === null || isNaN(originalVal) || Math.abs(newCost - originalVal) > 1e-9));
+    if (saveBtn) saveBtn.hidden = !changed;
   });
 
   // --- Monthly sales report upload ---
