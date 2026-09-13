@@ -1563,12 +1563,14 @@
       var noteTag = t.matched ? '' : '<div class="muted">No cost match</div>';
       var docIdAttr = escapeHtml(t.docId);
       var costVal = t.unitCost != null ? t.unitCost : '';
+      var unitPrice = (t.quantity ? t.sales / t.quantity : null);
       return '<tr>' +
         '<td>' + escapeHtml(t.monthLabel || t.monthKey) + '</td>' +
         '<td><div class="code">' + escapeHtml(t.sku) + '</div><div class="muted">' + escapeHtml(t.description || '') + '</div></td>' +
         '<td>' + escapeHtml(t.client || '') + '</td>' +
         '<td>' + escapeHtml(t.accounts || '') + '</td>' +
         '<td class="right">' + (t.quantity != null ? t.quantity.toLocaleString() : '—') + '</td>' +
+        '<td class="right">' + (unitPrice != null ? unitPrice.toFixed(4) : '<span class="empty-val">—</span>') + '</td>' +
         '<td class="right">' + fmtPeso(t.sales) + '</td>' +
         '<td class="right"><input type="number" step="0.0001" min="0" class="sr-cost-input" data-doc-id="' + docIdAttr + '" data-original="' + costVal + '" value="' + costVal + '" /></td>' +
         '<td class="right sr-gp-cell" data-doc-id="' + docIdAttr + '">' + fmtPeso(t.grossProfit) + '</td>' +
@@ -1578,7 +1580,7 @@
     }).join('');
     tableWrap.innerHTML =
       '<div class="sales-grid-wrap" style="max-height:60vh;"><table class="sales-grid"><thead><tr>' +
-      '<th>Month</th><th>SKU</th><th>Client</th><th>Account</th><th class="right">Qty</th><th class="right">Sales</th>' +
+      '<th>Month</th><th>SKU</th><th>Client</th><th>Account</th><th class="right">Qty</th><th class="right">Sales Unit Price</th><th class="right">Sales</th>' +
       '<th class="right">Unit Cost</th><th class="right">Gross Profit</th><th class="right">GP Rate</th><th class="right"></th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>' +
       '<p class="hint">' + (rows.length > CAP ? ('Showing first ' + CAP.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' rows on screen — ') : '') + 'Download Excel exports all ' + rows.length.toLocaleString() + ' row(s). Edit Unit Cost and click Save to correct a row — Gross Profit recalculates automatically and the Dashboard refreshes.</p>' +
@@ -1644,7 +1646,7 @@
       return {
         'Month': t.monthLabel || t.monthKey, 'Company': t.company || '', 'SKU': t.sku, 'Description': t.description || '',
         'Client': t.client || '', 'Account': t.accounts || '', 'Structure': t.structure || '', 'Item Class': t.itemClass || '',
-        'U/M': t.um || '', 'Quantity': t.quantity, 'Sales': t.sales, 'Unit Cost (VAT-ex)': t.unitCost != null ? t.unitCost : '',
+        'U/M': t.um || '', 'Quantity': t.quantity, 'Sales Unit Price': (t.quantity ? t.sales / t.quantity : ''), 'Sales': t.sales, 'Unit Cost (VAT-ex)': t.unitCost != null ? t.unitCost : '',
         'Total Unit Cost': t.totalUnitCost != null ? t.totalUnitCost : '', 'Gross Profit': t.grossProfit, 'GP Rate': t.grossProfitRate,
         'Cost Matched': t.matched ? 'Yes' : 'No', 'Manually Corrected': t.costOverride ? 'Yes' : 'No',
       };
